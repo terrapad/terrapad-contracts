@@ -1,0 +1,442 @@
+#[cfg(not(feature = "library"))]
+use cosmwasm_std::entry_point;
+use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, StdError, CosmosMsg, WasmMsg, Uint128};
+use cw20::Cw20ExecuteMsg;
+
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, UsersCountResponse, GetUserResponse, GetUsersResponse, AmountResponse};
+use crate::state::{RECIPIENTS, UserInfo, State, STATE, ACCURACY};
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn instantiate(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    msg: InstantiateMsg,
+) -> StdResult<Response> {
+    let state = State {
+        owner: deps.api.addr_canonicalize(info.sender.as_str())?,
+        reward_token: deps.api.addr_canonicalize(msg.reward_token.as_str())?,
+        release_interval: msg.release_interval,
+        release_rate: msg.release_rate,
+        initial_unlock: msg.initial_unlock,
+        lock_period: msg.lock_period,
+        vesting_period: msg.vesting_period,
+        userlist: vec![],
+        start_time: 0,
+        total_vesting_amount: 0
+    };
+
+    STATE.save(deps.storage, &state)?;
+
+    Ok(Response::new())
+}
+
+
+/************************************ Execution *************************************/
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn execute(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    msg: ExecuteMsg,
+) -> StdResult<Response> {
+    match msg {
+        ExecuteMsg::TransferOwnerShip { new_owner } => execute_transfer_ownership(deps, info, new_owner),
+        ExecuteMsg::SetStartTime { new_start_time } => execute_set_start_time(deps, info, new_start_time),
+        ExecuteMsg::UpdateRecipient { recp, amount } => execute_update_recipient(deps, _env, info, recp, amount),
+        ExecuteMsg::Withdraw {} => execute_withdraw(deps, _env, info)
+    }
+}
+
+pub fn execute_transfer_ownership(deps: DepsMut, info: MessageInfo, new_owner: String) -> StdResult<Response> {
+    let new_owner = deps.api.addr_canonicalize(new_owner.as_str())?;
+    let mut state: State = STATE.load(deps.storage)?;
+
+    // permission check
+    if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
+        return Err(StdError::generic_err("unauthorized"));
+    }
+
+    state.owner = new_owner.clone();
+    STATE.save(deps.storage, &state)?;
+
+    let mut messages: Vec<CosmosMsg> = vec![];
+    messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: state.reward_token.to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::IncreaseAllowance {
+            spender: new_owner.to_string(),
+            amount: Uint128::MAX,
+            expires: None
+        })?,
+        funds: vec![],
+    }));
+    Ok(Response::new()
+        .add_messages(messages)
+        .add_attribute("method", "transfer_ownership"))
+}
+
+pub fn execute_set_start_time(deps: DepsMut, info: MessageInfo, new_start_time: u64) -> StdResult<Response> {
+    let mut state: State = STATE.load(deps.storage)?;
+
+    // permission check
+    if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
+        return Err(StdError::generic_err("unauthorized"));
+    }
+
+    state.start_time = new_start_time;
+    STATE.save(deps.storage, &state)?;
+
+    Ok(Response::new().add_attribute("method", "set_start_time"))
+}
+
+pub fn execute_update_recipient(deps: DepsMut, env: Env, info: MessageInfo, recp: String, amount: u64) -> StdResult<Response> {
+    let mut state: State = STATE.load(deps.storage)?;
+
+    // permission check
+    if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
+        return Err(StdError::generic_err("unauthorized"));
+    }
+
+    // timeline check
+    if state.start_time != 0 && state.start_time < env.block.time.seconds()  {
+        return Err(StdError::generic_err("already started"));
+    }
+
+    // update
+    if RECIPIENTS.has(deps.storage, recp.clone()) {
+        let recp_info = RECIPIENTS.load(deps.storage, recp.clone())?;
+        state.total_vesting_amount = state.total_vesting_amount - recp_info.total_amount;
+
+        state.userlist.push(recp.clone());
+    }
+    RECIPIENTS.save(deps.storage, recp.clone(), &UserInfo { total_amount: amount, withrawn_amount: 0 })?;
+
+    state.total_vesting_amount = state.total_vesting_amount + amount;
+    STATE.save(deps.storage, &state)?;
+
+    Ok(Response::new().add_attribute("method", "update_recipient"))
+}
+
+pub fn execute_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> StdResult<Response> {
+    let state: State = STATE.load(deps.storage)?;
+    let sender = info.sender.into_string();
+    let mut recpinfo = RECIPIENTS.load(deps.storage, sender.clone())?;
+    if recpinfo.total_amount == 0 {
+        return Ok(Response::new());
+    }
+
+    let vested = query_vested(deps.as_ref(), env.clone(), sender.clone())?;
+    let withdrawable = query_withdrawable(deps.as_ref(), env.clone(), sender.clone())?;
+    recpinfo.withrawn_amount = vested.amount;
+    RECIPIENTS.save(deps.storage, sender.clone(), &recpinfo)?;
+
+    let mut messages: Vec<CosmosMsg> = vec![];
+    messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
+        contract_addr: state.reward_token.to_string(),
+        msg: to_binary(&Cw20ExecuteMsg::Transfer {
+            recipient: sender.clone(),
+            amount: Uint128::from(withdrawable.amount),
+        })?,
+        funds: vec![],
+    }));
+    Ok(Response::new()
+        .add_messages(messages)
+        .add_attribute("method", "withdraw"))
+}
+
+/************************************ Query *************************************/
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    match msg {
+        QueryMsg::UsersCount {} => to_binary(&query_count(deps)?),
+        QueryMsg::GetUsers { page, limit } => to_binary(&query_users(deps, page, limit)?),
+        QueryMsg::GetUser { user } => to_binary(&query_user(deps, user)?),
+        QueryMsg::Vested { user } => to_binary( &query_vested(deps, _env, user)? ),
+        QueryMsg::Locked { user } => to_binary( &query_locked(deps, _env, user)? ),
+        QueryMsg::Withdrawable { user } => to_binary( &query_withdrawable(deps, _env, user)? ),
+    }
+}
+
+fn query_count(deps: Deps) -> StdResult<UsersCountResponse> {
+    let state: State = STATE.load(deps.storage)?;
+    Ok(UsersCountResponse { count: state.userlist.len() as u64 })
+}
+
+fn query_users(deps: Deps, page: u64, limit: u64) -> StdResult<GetUsersResponse> {
+    let state: State = STATE.load(deps.storage)?;
+
+    let start = (page * limit) as usize;
+    let end = (page * limit + limit) as usize;
+
+    Ok(GetUsersResponse { users: state.userlist[start..end].to_vec() })
+}
+
+fn query_user(deps: Deps, user: String) -> StdResult<GetUserResponse> {
+    Ok(GetUserResponse { data: RECIPIENTS.load(deps.storage, user)? })
+}
+
+fn query_vested(deps: Deps, env: Env, user: String) -> StdResult<AmountResponse> {
+    let state: State = STATE.load(deps.storage)?;
+
+    let lock_end_time = state.start_time + state.lock_period;
+    let vesting_end_time = lock_end_time + state.vesting_period;
+    let recpinfo = RECIPIENTS.load(deps.storage, user)?;
+
+    let amount: u64;
+    if state.start_time == 0 || recpinfo.total_amount == 0 || env.block.time.seconds() < lock_end_time {
+        amount = 0;
+    } else if env.block.time.seconds() >= vesting_end_time {
+        amount = recpinfo.total_amount;
+    } else {
+        let initial_unlock_amount = recpinfo.total_amount * state.initial_unlock / ACCURACY;
+        let unlock_amount_per_interval = recpinfo.total_amount * state.release_rate / ACCURACY;
+        let mut vested_amount = (env.block.time.seconds() - lock_end_time) / state.release_interval * unlock_amount_per_interval + initial_unlock_amount;
+        vested_amount = if recpinfo.withrawn_amount > vested_amount { recpinfo.withrawn_amount } else { vested_amount };
+        amount = if vested_amount > recpinfo.total_amount { recpinfo.total_amount } else { vested_amount};
+    }
+
+    Ok(AmountResponse { amount })
+}
+
+fn query_locked(deps: Deps, env: Env, user: String) -> StdResult<AmountResponse> {
+    let recpinfo = RECIPIENTS.load(deps.storage, user.clone())?;
+    let vested = query_vested(deps, env, user.clone())?;
+
+    Ok(AmountResponse { amount: recpinfo.total_amount - vested.amount })
+}
+
+fn query_withdrawable(deps: Deps, env: Env, user: String) -> StdResult<AmountResponse> {
+    let recpinfo = RECIPIENTS.load(deps.storage, user.clone())?;
+    let vested = query_vested(deps, env, user.clone())?;
+
+    Ok(AmountResponse { amount: vested.amount - recpinfo.withrawn_amount })
+}
+
+mod tests {
+    use cosmwasm_std::{Uint128, testing::{mock_dependencies, mock_info, mock_env}, from_binary, Timestamp};
+    use super::*;
+
+    #[test]
+    fn test_initialize() {
+        let mut deps = mock_dependencies(&[]);
+        let init_msg = InstantiateMsg {
+            reward_token: "reward_token".to_string(),
+            release_interval: 60,
+            release_rate: 10,
+            initial_unlock: 10,
+            lock_period: 600,
+            vesting_period: 6000,
+        };
+        let info = mock_info(&"owner".to_string(), &[]);
+        let _ = instantiate(deps.as_mut(), mock_env(), info, init_msg).unwrap();
+
+        println!("{:?}", "Initializing contract ok")
+    }
+
+    #[test]
+    fn test_security() {
+        let mut deps = mock_dependencies(&[]);
+        let init_msg = InstantiateMsg {
+            reward_token: "reward_token".to_string(),
+            release_interval: 60,
+            release_rate: 10,
+            initial_unlock: 10,
+            lock_period: 600,
+            vesting_period: 6000,
+        };
+        let info = mock_info(&"owner".to_string(), &[]);
+        let _ = instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
+
+        let update_msg = ExecuteMsg::UpdateRecipient { recp: "user".to_string(), amount: 1000 };
+        let set_start_time_msg = ExecuteMsg::SetStartTime { new_start_time: 1000 };
+        let transfer_ownership_msg = ExecuteMsg::TransferOwnerShip { new_owner: "user".to_string() };
+
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info(&"user".to_string(), &[]),
+            update_msg.clone(),
+        );
+        match res {
+            Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "unauthorized"),
+            _ => panic!("Invalid error"),
+        }
+
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info(&"user".to_string(), &[]),
+            set_start_time_msg.clone(),
+        );
+        match res {
+            Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "unauthorized"),
+            _ => panic!("Invalid error"),
+        }
+
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info(&"user".to_string(), &[]),
+            transfer_ownership_msg.clone(),
+        );
+        match res {
+            Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "unauthorized"),
+            _ => panic!("Invalid error"),
+        }
+
+        execute(deps.as_mut(), mock_env(), info.clone(), transfer_ownership_msg).unwrap();
+        execute(deps.as_mut(), mock_env(), mock_info(&"user".to_string(), &[]), update_msg).unwrap();
+        execute(deps.as_mut(), mock_env(), mock_info(&"user".to_string(), &[]), set_start_time_msg).unwrap();
+    }
+
+    #[test]
+    fn test_vesting_amount() {
+        let mut deps = mock_dependencies(&[]);
+        let init_msg = InstantiateMsg {
+            reward_token: "reward_token".to_string(),
+            release_interval: 60,
+            release_rate: 100,
+            initial_unlock: 100,
+            lock_period: 600,
+            vesting_period: 6000,
+        };
+        let info = mock_info(&"owner".to_string(), &[]);
+        instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg.clone()).unwrap();
+
+        // update vesting info of `user`
+        let user_vesting_amount: u64 = 1000;
+        let msg = ExecuteMsg::UpdateRecipient { recp: "user".to_string(), amount: user_vesting_amount };
+        execute(deps.as_mut(), mock_env(), info.clone(), msg).unwrap();
+
+        let start_time: u64 = 1;
+
+        // set start time of vesting
+        let msg = ExecuteMsg::SetStartTime { new_start_time: start_time };
+        execute(deps.as_mut(), mock_env(), info.clone(), msg).unwrap();
+
+        // in lock period
+        let mut env = mock_env();
+        env.block.time = Timestamp::from_seconds(start_time);
+        let vested: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Vested { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+        let withdrawable: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Withdrawable { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+
+        assert_eq!(vested.amount, 0);
+        assert_eq!(withdrawable.amount, 0);
+
+        // initial unlock
+        env.block.time = Timestamp::from_seconds(start_time + init_msg.lock_period);
+        let vested: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Vested { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+        let withdrawable: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Withdrawable { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+
+        let initial_unlock_amount = user_vesting_amount * init_msg.initial_unlock / 1000;
+        assert_eq!(vested.amount, initial_unlock_amount);
+        assert_eq!(withdrawable.amount, initial_unlock_amount);
+
+        // first release tick
+        env.block.time = Timestamp::from_seconds(start_time + init_msg.lock_period + init_msg.release_interval);
+        let vested: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Vested { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+        let withdrawable: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Withdrawable { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+
+        let amount_per_interval = user_vesting_amount * init_msg.release_rate / 1000;
+        assert_eq!(vested.amount, amount_per_interval + initial_unlock_amount);
+        assert_eq!(withdrawable.amount, amount_per_interval + initial_unlock_amount);
+
+        // before 5th release tick
+        env.block.time = Timestamp::from_seconds(start_time + init_msg.lock_period + init_msg.release_interval * 5 - 1);
+        let vested: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Vested { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+        let withdrawable: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Withdrawable { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+
+        assert_eq!(vested.amount, amount_per_interval * 4 + initial_unlock_amount);
+        assert_eq!(withdrawable.amount, amount_per_interval * 4 + initial_unlock_amount);
+
+        // after vesting period
+        env.block.time = Timestamp::from_seconds(start_time + init_msg.lock_period + init_msg.vesting_period);
+        let vested: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Vested { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+        let withdrawable: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Withdrawable { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+
+        assert_eq!(vested.amount, user_vesting_amount);
+        assert_eq!(withdrawable.amount, user_vesting_amount);
+    }
+
+
+    #[test]
+    fn test_withdraw() {
+        let mut deps = mock_dependencies(&[]);
+        let init_msg = InstantiateMsg {
+            reward_token: "reward_token".to_string(),
+            release_interval: 60,
+            release_rate: 100,
+            initial_unlock: 100,
+            lock_period: 600,
+            vesting_period: 6000,
+        };
+        let info = mock_info(&"owner".to_string(), &[]);
+        instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg.clone()).unwrap();
+
+        // update vesting info of `user`
+        let user_vesting_amount: u64 = 1000;
+        let msg = ExecuteMsg::UpdateRecipient { recp: "user".to_string(), amount: user_vesting_amount };
+        execute(deps.as_mut(), mock_env(), info.clone(), msg).unwrap();
+
+        let start_time: u64 = 1;
+
+        // set start time of vesting
+        let msg = ExecuteMsg::SetStartTime { new_start_time: start_time };
+        execute(deps.as_mut(), mock_env(), info.clone(), msg).unwrap();
+
+        // 5th release tick
+        let initial_unlock_amount = user_vesting_amount * init_msg.initial_unlock / 1000;
+        let mut env = mock_env();
+        env.block.time = Timestamp::from_seconds(start_time + init_msg.lock_period + init_msg.release_interval * 5);
+
+        // withdraw
+        let withdraw_msg = ExecuteMsg::Withdraw{};
+        let res = execute(deps.as_mut(), env.clone(), mock_info(&"user".to_string(), &[]), withdraw_msg).unwrap();
+        assert_eq!(res.messages.len(), 1);
+
+        let vested: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Vested { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+        let withdrawable: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Withdrawable { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+
+        let amount_per_interval = user_vesting_amount * init_msg.release_rate / 1000;
+        assert_eq!(vested.amount, amount_per_interval * 5 + initial_unlock_amount);
+        assert_eq!(withdrawable.amount, 0);
+
+        // after vesting period
+        env.block.time = Timestamp::from_seconds(start_time + init_msg.lock_period + init_msg.vesting_period);
+        let vested: AmountResponse = from_binary(
+            &query(deps.as_ref(), env.clone(), QueryMsg::Vested { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+        let withdrawable: AmountResponse = from_binary(
+            &query(deps.as_ref(),env.clone(), QueryMsg::Withdrawable { user: "user".to_string() }).unwrap(),
+        ).unwrap();
+
+        assert_eq!(vested.amount, user_vesting_amount);
+        assert_eq!(withdrawable.amount, user_vesting_amount - (amount_per_interval * 5 + initial_unlock_amount));
+    }
+}
