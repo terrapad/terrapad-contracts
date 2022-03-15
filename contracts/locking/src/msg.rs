@@ -1,8 +1,8 @@
 
+use cosmwasm_std::Uint128;
+use cw20::Cw20ReceiveMsg;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-
-use cosmwasm_std::{Uint128, Order};
 
 use crate::state::LockInfo;
 use crate::types::OrderBy;
@@ -24,12 +24,16 @@ pub enum ExecuteMsg {
         penalty_period: Option<u64>,
         dead: Option<String>
     },
-    Deposit {
-        amount: u64,
-    },
+    Receive(Cw20ReceiveMsg),
     Withdraw {
-        amount: u64
+        amount: Uint128
     },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Cw20HookMsg {
+    Deposit {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

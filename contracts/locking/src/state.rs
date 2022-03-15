@@ -1,7 +1,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cosmwasm_std::{CanonicalAddr, StdResult, Storage};
+use cosmwasm_std::{CanonicalAddr, StdResult, Storage, Uint128};
 use cosmwasm_storage::{bucket, bucket_read, singleton, singleton_read, ReadonlyBucket};
 
 use crate::types::OrderBy;
@@ -28,7 +28,7 @@ pub fn read_config(storage: &dyn Storage) -> StdResult<Config> {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct LockInfo {
     // Total amount of tokens to locked.
-    pub amount: u64,
+    pub amount: Uint128,
     // Last locked time.
     pub last_locked_time: u64,
 }

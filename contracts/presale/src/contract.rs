@@ -2,11 +2,11 @@ use std::convert::TryInto;
 
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, StdError, CosmosMsg, WasmMsg, Uint128, WasmQuery, QueryRequest};
-use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, TokenInfoResponse, BalanceResponse};
+use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, StdError, CosmosMsg, WasmMsg, Uint128, WasmQuery, QueryRequest, from_binary, Addr};
+use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, TokenInfoResponse, BalanceResponse, Cw20ReceiveMsg};
 use whitelist::msg::GetUserResponse;
 
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, ParticipantsCountResponse, GetParticipantResponse, GetParticipantsResponse, GetSaleStatusResponse};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, ParticipantsCountResponse, GetParticipantResponse, GetParticipantsResponse, GetSaleStatusResponse, Cw20HookMsg};
 use crate::state::{PARTICIPANTS, STATE, PRIVATE_SOLD_FUNDS, ACCURACY, State, Participant};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -58,15 +58,41 @@ pub fn execute(
             new_public_start_time,
             new_presale_period
         } => execute_update_info(deps, info, new_private_start_time, new_public_start_time, new_presale_period),
-        ExecuteMsg::Deposit {
-            amount
-        } => execute_deposit(deps, info, _env, amount),
-        ExecuteMsg::DepositPrivateSale {
-            amount
-        } => execute_deposit_private_sale(deps, info, _env, amount),
+        ExecuteMsg::Receive(msg) => receive_cw20(deps, _env, info, msg),
         ExecuteMsg::WithdrawFunds { receiver } => execute_withdraw_funds(deps, _env, info, receiver),
         ExecuteMsg::WithdrawUnsoldToken { receiver } => execute_withdraw_unsold_token(deps, _env, info, receiver),
         ExecuteMsg::StartVesting {} => execute_start_vesting(deps, _env, info)
+    }
+}
+
+pub fn receive_cw20(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    cw20_msg: Cw20ReceiveMsg,
+) -> StdResult<Response> {
+    let mut state: State = STATE.load(deps.storage)?;
+
+    match from_binary(&cw20_msg.msg) {
+        Ok(Cw20HookMsg::Deposit {}) => {
+            // only staking token contract can execute this message
+            if state.fund_token != deps.api.addr_canonicalize(info.sender.as_str())? {
+                return Err(StdError::generic_err("unauthorized"));
+            }
+
+            let cw20_sender = deps.api.addr_validate(&cw20_msg.sender)?;
+            execute_deposit(deps, env, cw20_sender, u128::from(cw20_msg.amount).try_into().unwrap())
+        }
+        Ok(Cw20HookMsg::DepositPrivateSale {}) => {
+            // only staking token contract can execute this message
+            if state.fund_token != deps.api.addr_canonicalize(info.sender.as_str())? {
+                return Err(StdError::generic_err("unauthorized"));
+            }
+
+            let cw20_sender = deps.api.addr_validate(&cw20_msg.sender)?;
+            execute_deposit_private_sale(deps, env, cw20_sender, u128::from(cw20_msg.amount).try_into().unwrap())
+        }
+        Err(_) => Err(StdError::generic_err("data should be given")),
     }
 }
 
@@ -101,7 +127,7 @@ pub fn execute_update_info(deps: DepsMut, info: MessageInfo, new_private_start_t
     Ok(Response::new().add_attribute("method", "set_start_time"))
 }
 
-pub fn execute_deposit(deps: DepsMut, info: MessageInfo, env: Env, amount: u64) -> StdResult<Response> {
+pub fn execute_deposit(deps: DepsMut, env: Env, sender: Addr, amount: u64) -> StdResult<Response> {
     let mut state: State = STATE.load(deps.storage)?;
 
     let end_time = state.public_start_time + state.presale_period;
@@ -109,7 +135,7 @@ pub fn execute_deposit(deps: DepsMut, info: MessageInfo, env: Env, amount: u64) 
         return Err(StdError::generic_err("presale not in progress"));
     }
 
-    let sender = info.sender.to_string();
+    let sender = sender.to_string();
     let allo_info: GetUserResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
         contract_addr: state.whitelist.to_string(),
         msg: to_binary(&whitelist::msg::QueryMsg::GetUser {
@@ -160,15 +186,6 @@ pub fn execute_deposit(deps: DepsMut, info: MessageInfo, env: Env, amount: u64) 
 
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: state.fund_token.to_string(),
-        msg: to_binary(&Cw20ExecuteMsg::TransferFrom {
-            owner: sender.clone(),
-            recipient: env.contract.address.into_string(),
-            amount: Uint128::from(amount),
-        })?,
-        funds: vec![],
-    }));
-    messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
         contract_addr: state.vesting.to_string(),
         msg: to_binary(&vesting::msg::ExecuteMsg::UpdateRecipient {
             recp: sender.clone(),
@@ -181,14 +198,14 @@ pub fn execute_deposit(deps: DepsMut, info: MessageInfo, env: Env, amount: u64) 
         .add_attribute("method", "deposit"))
 }
 
-pub fn execute_deposit_private_sale(deps: DepsMut, info: MessageInfo, env: Env, amount: u64) -> StdResult<Response> {
+pub fn execute_deposit_private_sale(deps: DepsMut, env: Env, sender: Addr, amount: u64) -> StdResult<Response> {
     let mut state: State = STATE.load(deps.storage)?;
 
     if env.block.time.seconds() < state.private_start_time {
         return Err(StdError::generic_err("private not in progress"));
     }
 
-    let sender = info.sender.to_string();
+    let sender = sender.to_string();
     let allo_info: GetUserResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
         contract_addr: state.whitelist.to_string(),
         msg: to_binary(&whitelist::msg::QueryMsg::GetUser {

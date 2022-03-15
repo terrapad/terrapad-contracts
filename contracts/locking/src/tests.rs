@@ -2,7 +2,7 @@ use crate::contract::{execute, instantiate, query};
 use crate::types::OrderBy;
 use crate::msg::{
     ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, LockedAccountsResponse,
-    LockInfoResponse,
+    LockInfoResponse, Cw20HookMsg,
 };
 use crate::state::{ Config, LockInfo };
 
@@ -11,7 +11,7 @@ use cosmwasm_std::{
     attr, from_binary, to_binary, Api, CanonicalAddr, CosmosMsg, StdError, SubMsg, Timestamp,
     Uint128, WasmMsg,
 };
-use cw20::Cw20ExecuteMsg;
+use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 
 #[test]
 fn proper_initialization() {
@@ -127,8 +127,13 @@ fn deposit_and_withdraw() {
     let info = mock_info("addr0000", &[]);
     let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
 
-    let msg = ExecuteMsg::Deposit { amount: 100u64 };
-    let info = mock_info("addr0000", &[]);
+    let msg = ExecuteMsg::Receive(Cw20ReceiveMsg {
+        sender: "addr0000".to_string(),
+        amount: Uint128::from(100u128),
+        msg: to_binary(&Cw20HookMsg::Deposit {}).unwrap(),
+    });
+
+    let info = mock_info("token", &[]);
     let mut env = mock_env();
     env.block.time = Timestamp::from_seconds(0);
     let _res = execute(deps.as_mut(), env.clone(), info, msg).unwrap();
@@ -145,7 +150,7 @@ fn deposit_and_withdraw() {
     let info = mock_info("addr0000", &[]);
     env.block.time = Timestamp::from_seconds(100);
 
-    let msg = ExecuteMsg::Withdraw { amount: 100u64 };
+    let msg = ExecuteMsg::Withdraw { amount: Uint128::from(100u128) };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone()).unwrap();
     assert_eq!(
         res.attributes,

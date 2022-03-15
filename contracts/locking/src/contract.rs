@@ -3,17 +3,17 @@ use cosmwasm_std::entry_point;
 
 use cosmwasm_std::{
     to_binary, Addr, Api, Binary, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Response,
-    StdError, StdResult, Storage, Uint128, WasmMsg,
+    StdError, StdResult, Storage, Uint128, WasmMsg, from_binary,
 };
 
 use crate::state::{
     read_config, read_lock_info, read_lock_infos, store_config, store_lock_info, Config, LockInfo
 };
 use crate::msg::{
-    ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, LockInfoResponse, LockedAccountsResponse,
+    ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, LockInfoResponse, LockedAccountsResponse, Cw20HookMsg,
 };
 use crate::types::OrderBy;
-use cw20::Cw20ExecuteMsg;
+use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -38,7 +38,7 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
-        ExecuteMsg::Deposit { amount } => deposit(deps, env, info, amount),
+        ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
         ExecuteMsg::Withdraw { amount } => withdraw(deps, env, info, amount),
         _ => {
             assert_owner_privilege(deps.storage, deps.api, info.sender)?;
@@ -92,33 +92,40 @@ pub fn update_config(
     Ok(Response::new().add_attributes(vec![("action", "update_config")]))
 }
 
-pub fn deposit(deps: DepsMut, env: Env, info: MessageInfo, amount: u64) -> StdResult<Response> {
+pub fn receive_cw20(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    cw20_msg: Cw20ReceiveMsg,
+) -> StdResult<Response> {
+    let config: Config = read_config(deps.storage)?;
+
+    match from_binary(&cw20_msg.msg) {
+        Ok(Cw20HookMsg::Deposit {}) => {
+            // only staking token contract can execute this message
+            if config.token != deps.api.addr_canonicalize(info.sender.as_str())? {
+                return Err(StdError::generic_err("unauthorized"));
+            }
+
+            let cw20_sender = deps.api.addr_validate(&cw20_msg.sender)?;
+            deposit(deps, env, cw20_sender, cw20_msg.amount)
+        }
+        Err(_) => Err(StdError::generic_err("data should be given")),
+    }
+}
+
+pub fn deposit(deps: DepsMut, env: Env, sender: Addr, amount: Uint128) -> StdResult<Response> {
     let current_time = env.block.time.seconds();
-    let address = info.sender;
+    let address = sender;
     let address_raw = deps.api.addr_canonicalize(&address.to_string())?;
 
-    let config: Config = read_config(deps.storage)?;
-    let mut lock_info: LockInfo = read_lock_info(deps.storage, &address_raw).unwrap_or(LockInfo { amount: 0, last_locked_time: current_time });
-
-    let messages: Vec<CosmosMsg> = if amount == 0 {
-        vec![]
-    } else {
-        vec![CosmosMsg::Wasm(WasmMsg::Execute {
-            contract_addr: deps.api.addr_humanize(&config.token)?.to_string(),
-            funds: vec![],
-            msg: to_binary(&Cw20ExecuteMsg::TransferFrom {
-                owner: address.to_string(),
-                recipient: env.contract.address.into_string(),
-                amount: Uint128::from(amount),
-            })?,
-        })]
-    };
+    let mut lock_info: LockInfo = read_lock_info(deps.storage, &address_raw).unwrap_or(LockInfo { amount: Uint128::zero(), last_locked_time: current_time });
 
     lock_info.last_locked_time = current_time;
     lock_info.amount = amount;
     store_lock_info(deps.storage, &address_raw, &lock_info)?;
 
-    Ok(Response::new().add_messages(messages).add_attributes(vec![
+    Ok(Response::new().add_attributes(vec![
         ("action", "deposit"),
         ("address", address.as_str()),
         ("amount", amount.to_string().as_str()),
@@ -126,7 +133,7 @@ pub fn deposit(deps: DepsMut, env: Env, info: MessageInfo, amount: u64) -> StdRe
     ]))
 }
 
-pub fn withdraw(deps: DepsMut, env: Env, info: MessageInfo, amount: u64) -> StdResult<Response> {
+pub fn withdraw(deps: DepsMut, env: Env, info: MessageInfo, amount: Uint128) -> StdResult<Response> {
     let current_time = env.block.time.seconds();
     let address = info.sender;
     let address_raw = deps.api.addr_canonicalize(&address.to_string())?;
@@ -135,7 +142,7 @@ pub fn withdraw(deps: DepsMut, env: Env, info: MessageInfo, amount: u64) -> StdR
     let mut lock_info: LockInfo = read_lock_info(deps.storage, &address_raw)?;
 
     let penalty_amount = compute_penalty_amount(amount, current_time, &lock_info);
-    let mut messages: Vec<CosmosMsg> = if penalty_amount == 0 {
+    let mut messages: Vec<CosmosMsg> = if penalty_amount.is_zero() {
         vec![]
     } else {
         vec![CosmosMsg::Wasm(WasmMsg::Execute {
@@ -170,16 +177,16 @@ pub fn withdraw(deps: DepsMut, env: Env, info: MessageInfo, amount: u64) -> StdR
 }
 
 
-fn compute_penalty_amount(amount: u64, current_time: u64, lock_info: &LockInfo) -> u64 {
+fn compute_penalty_amount(amount: Uint128, current_time: u64, lock_info: &LockInfo) -> Uint128 {
     let passed_time = current_time - lock_info.last_locked_time;
     return if passed_time < 10 * 86400 {
-        amount / 10
+        amount.checked_div(Uint128::from(10u128)).unwrap()
     } else if passed_time < 20 * 86400 {
-        amount / 20
+        amount.checked_div(Uint128::from(20u128)).unwrap()
     } else if passed_time < 30 * 86400 {
-        amount / 30
+        amount.checked_div(Uint128::from(30u128)).unwrap()
     } else {
-        0
+        Uint128::zero()
     }
 }
 

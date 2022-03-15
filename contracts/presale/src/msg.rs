@@ -1,3 +1,4 @@
+use cw20::Cw20ReceiveMsg;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -28,12 +29,7 @@ pub enum ExecuteMsg {
         new_public_start_time: u64,
         new_presale_period: u64
     },
-    Deposit {
-        amount: u64,
-    },
-    DepositPrivateSale {
-        amount: u64,
-    },
+    Receive(Cw20ReceiveMsg),
     WithdrawFunds {
         receiver: String,
     },
@@ -42,6 +38,15 @@ pub enum ExecuteMsg {
     },
     StartVesting {},
 }
+
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Cw20HookMsg {
+    Deposit {},
+    DepositPrivateSale {},
+}
+
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
