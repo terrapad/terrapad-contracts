@@ -1,14 +1,11 @@
 use crate::contract::{execute, instantiate, query};
-use crate::types::OrderBy;
 use crate::msg::{
-    ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, LockedAccountsResponse,
-    LockInfoResponse, Cw20HookMsg,
+    ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, Cw20HookMsg,
 };
-use crate::state::{ Config, LockInfo };
 
 use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
 use cosmwasm_std::{
-    attr, from_binary, to_binary, Api, CanonicalAddr, CosmosMsg, StdError, SubMsg, Timestamp,
+    attr, from_binary, to_binary, CosmosMsg, StdError, SubMsg, Timestamp,
     Uint128, WasmMsg,
 };
 use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};

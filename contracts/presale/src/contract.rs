@@ -71,7 +71,7 @@ pub fn receive_cw20(
     info: MessageInfo,
     cw20_msg: Cw20ReceiveMsg,
 ) -> StdResult<Response> {
-    let mut state: State = STATE.load(deps.storage)?;
+    let state: State = STATE.load(deps.storage)?;
 
     match from_binary(&cw20_msg.msg) {
         Ok(Cw20HookMsg::Deposit {}) => {
@@ -412,80 +412,3 @@ fn query_sale_status(deps: Deps) -> StdResult<GetSaleStatusResponse> {
     Ok(GetSaleStatusResponse { private_sold_amount: state.private_sold_amount, public_sold_amount: state.public_sold_amount })
 }
 
-
-mod tests {
-    use cosmwasm_std::{Uint128, testing::{mock_dependencies, mock_info, mock_env}, from_binary, Timestamp};
-    use super::*;
-
-    #[test]
-    fn test_initialize() {
-        let mut deps = mock_dependencies(&[]);
-        let init_msg = InstantiateMsg {
-            fund_token: "fund_token".to_string(),
-            reward_token: "reward_token".to_string(),
-            vesting: "vesting".to_string(),
-            whitelist: "whitelist".to_string(),
-
-            exchange_rate: 1,
-            private_start_time: 0,
-            public_start_time: 0,
-            presale_period: 100,
-            distribution_amount: 1000,
-        };
-        let info = mock_info(&"owner".to_string(), &[]);
-        let _ = instantiate(deps.as_mut(), mock_env(), info, init_msg).unwrap();
-
-        println!("{:?}", "Initializing contract ok")
-    }
-
-    #[test]
-    fn test_security() {
-        let mut deps = mock_dependencies(&[]);
-        let init_msg = InstantiateMsg {
-            fund_token: "fund_token".to_string(),
-            reward_token: "reward_token".to_string(),
-            vesting: "vesting".to_string(),
-            whitelist: "whitelist".to_string(),
-
-            exchange_rate: 1,
-            private_start_time: 0,
-            public_start_time: 0,
-            presale_period: 100,
-            distribution_amount: 1000,
-        };
-        let info = mock_info(&"owner".to_string(), &[]);
-        let _ = instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
-
-        let update_msg = ExecuteMsg::UpdatePresaleInfo {
-            new_private_start_time: 1,
-            new_public_start_time: 10,
-            new_presale_period: 100,
-        };
-        let transfer_ownership_msg = ExecuteMsg::TransferOwnerShip { new_owner: "user".to_string() };
-
-        let res = execute(
-            deps.as_mut(),
-            mock_env(),
-            mock_info(&"user".to_string(), &[]),
-            update_msg.clone(),
-        );
-        match res {
-            Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "unauthorized"),
-            _ => panic!("Invalid error"),
-        }
-
-        let res = execute(
-            deps.as_mut(),
-            mock_env(),
-            mock_info(&"user".to_string(), &[]),
-            transfer_ownership_msg.clone(),
-        );
-        match res {
-            Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "unauthorized"),
-            _ => panic!("Invalid error"),
-        }
-
-        execute(deps.as_mut(), mock_env(), info.clone(), transfer_ownership_msg).unwrap();
-        execute(deps.as_mut(), mock_env(), mock_info(&"user".to_string(), &[]), update_msg).unwrap();
-    }
-}
