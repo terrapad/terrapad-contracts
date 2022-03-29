@@ -35,8 +35,9 @@ serde = { version = "1.0.103", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0.20" }
 protobuf = { version = "2", features = ["with-bytes"] }
 cosmwasm-bignumber = "2.2.0"
-whitelist = { path = "../whitelist", default-features = false, version = "0.1.0"}
 vesting = { path = "../vesting", default-features = false, version = "0.1.0"}
+hex = "0.4"
+sha2 = { version = "0.9.5", default-features = false }
 
 [dev-dependencies]
 cosmwasm-schema = "0.16.0"

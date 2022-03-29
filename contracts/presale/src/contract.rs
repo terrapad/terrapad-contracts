@@ -2,12 +2,13 @@ use std::convert::TryInto;
 
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, StdError, CosmosMsg, WasmMsg, Uint128, WasmQuery, QueryRequest, from_binary, Addr};
+use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, CosmosMsg, WasmMsg, Uint128, WasmQuery, QueryRequest, from_binary, Addr, attr};
 use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, TokenInfoResponse, BalanceResponse, Cw20ReceiveMsg};
-use whitelist::msg::GetUserResponse;
+use sha2::Digest;
 
+use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, ParticipantsCountResponse, GetParticipantResponse, GetParticipantsResponse, GetSaleStatusResponse, Cw20HookMsg};
-use crate::state::{PARTICIPANTS, STATE, PRIVATE_SOLD_FUNDS, ACCURACY, State, Participant};
+use crate::state::{PARTICIPANTS, STATE, PRIVATE_SOLD_FUNDS, ACCURACY, State, Participant, AlloInfo};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -15,13 +16,13 @@ pub fn instantiate(
     _env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
-) -> StdResult<Response> {
+) -> Result<Response, ContractError> {
     let state = State {
         owner: deps.api.addr_canonicalize(info.sender.as_str())?,
         fund_token: deps.api.addr_canonicalize(msg.fund_token.as_str())?,
         reward_token: deps.api.addr_canonicalize(msg.reward_token.as_str())?,
         vesting: deps.api.addr_canonicalize(msg.vesting.as_str())?,
-        whitelist: deps.api.addr_canonicalize(msg.whitelist.as_str())?,
+        whitelist_merkle_root: msg.whitelist_merkle_root,
 
         exchange_rate: msg.exchange_rate,
         presale_period: msg.presale_period,
@@ -48,11 +49,12 @@ pub fn execute(
     _env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
-) -> StdResult<Response> {
+) -> Result<Response, ContractError> {
     match msg {
         ExecuteMsg::TransferOwnerShip {
             new_owner
         } => execute_transfer_ownership(deps, info, new_owner),
+        ExecuteMsg::SetMerkleRoot { merkle_root } => execute_set_whitelist_merkle_root(deps, info, merkle_root),
         ExecuteMsg::UpdatePresaleInfo {
             new_private_start_time,
             new_public_start_time,
@@ -70,53 +72,73 @@ pub fn receive_cw20(
     env: Env,
     info: MessageInfo,
     cw20_msg: Cw20ReceiveMsg,
-) -> StdResult<Response> {
+) -> Result<Response, ContractError> {
     let state: State = STATE.load(deps.storage)?;
 
     match from_binary(&cw20_msg.msg) {
-        Ok(Cw20HookMsg::Deposit {}) => {
+        Ok(Cw20HookMsg::Deposit { allo_info, proof }) => {
             // only staking token contract can execute this message
             if state.fund_token != deps.api.addr_canonicalize(info.sender.as_str())? {
-                return Err(StdError::generic_err("unauthorized"));
+                return Err(ContractError::Unauthorized {});
             }
 
             let cw20_sender = deps.api.addr_validate(&cw20_msg.sender)?;
-            execute_deposit(deps, env, cw20_sender, u128::from(cw20_msg.amount).try_into().unwrap())
+            execute_deposit(deps, env, cw20_sender, u128::from(cw20_msg.amount).try_into().unwrap(), allo_info, proof)
         }
-        Ok(Cw20HookMsg::DepositPrivateSale {}) => {
+        Ok(Cw20HookMsg::DepositPrivateSale { allo_info, proof }) => {
             // only staking token contract can execute this message
             if state.fund_token != deps.api.addr_canonicalize(info.sender.as_str())? {
-                return Err(StdError::generic_err("unauthorized"));
+                return Err(ContractError::Unauthorized {});
             }
 
             let cw20_sender = deps.api.addr_validate(&cw20_msg.sender)?;
-            execute_deposit_private_sale(deps, env, cw20_sender, u128::from(cw20_msg.amount).try_into().unwrap())
+            execute_deposit_private_sale(deps, env, cw20_sender, u128::from(cw20_msg.amount).try_into().unwrap(), allo_info, proof)
         }
-        Err(_) => Err(StdError::generic_err("data should be given")),
+        Err(_) => Err(ContractError::InvalidInput {}),
     }
 }
 
-pub fn execute_transfer_ownership(deps: DepsMut, info: MessageInfo, new_owner: String) -> StdResult<Response> {
-    let new_owner = deps.api.addr_canonicalize(new_owner.as_str())?;
+pub fn execute_transfer_ownership(deps: DepsMut, info: MessageInfo, new_owner: String) -> Result<Response, ContractError> {
+    let new_owner_canoncial = deps.api.addr_canonicalize(new_owner.as_str())?;
     let mut state: State = STATE.load(deps.storage)?;
 
     // permission check
     if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
-        return Err(StdError::generic_err("unauthorized"));
+        return Err(ContractError::Unauthorized {});
     }
 
-    state.owner = new_owner;
+    state.owner = new_owner_canoncial;
     STATE.save(deps.storage, &state)?;
 
-    Ok(Response::new().add_attribute("method", "transfer_ownership"))
+    Ok(Response::new().add_attributes(vec![
+        attr("action", "transfer_ownership"),
+        attr("owner", new_owner),
+    ]))
 }
 
-pub fn execute_update_info(deps: DepsMut, info: MessageInfo, new_private_start_time: u64, new_public_start_time: u64, new_presale_period: u64) -> StdResult<Response> {
+pub fn execute_set_whitelist_merkle_root(deps: DepsMut, info: MessageInfo, merkle_root: String) -> Result<Response, ContractError> {
     let mut state: State = STATE.load(deps.storage)?;
 
     // permission check
     if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
-        return Err(StdError::generic_err("unauthorized"));
+        return Err(ContractError::Unauthorized {});
+    }
+
+    state.whitelist_merkle_root = merkle_root.clone();
+    STATE.save(deps.storage, &state)?;
+
+    Ok(Response::new().add_attributes(vec![
+        attr("action", "register_merkle_root"),
+        attr("merkle_root", merkle_root),
+    ]))
+}
+
+pub fn execute_update_info(deps: DepsMut, info: MessageInfo, new_private_start_time: u64, new_public_start_time: u64, new_presale_period: u64) -> Result<Response, ContractError> {
+    let mut state: State = STATE.load(deps.storage)?;
+
+    // permission check
+    if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
+        return Err(ContractError::Unauthorized {});
     }
 
     state.private_start_time = new_private_start_time;
@@ -124,29 +146,52 @@ pub fn execute_update_info(deps: DepsMut, info: MessageInfo, new_private_start_t
     state.presale_period = new_presale_period;
     STATE.save(deps.storage, &state)?;
 
-    Ok(Response::new().add_attribute("method", "set_start_time"))
+    Ok(Response::new().add_attributes(vec![
+        attr("action", "set_start_time"),
+        attr("new_private_start_time", new_private_start_time.to_string()),
+        attr("new_public_start_time", new_public_start_time.to_string()),
+        attr("new_presale_period", new_presale_period.to_string()),
+    ]))
 }
 
-pub fn execute_deposit(deps: DepsMut, env: Env, sender: Addr, amount: u64) -> StdResult<Response> {
+pub fn execute_deposit(deps: DepsMut, env: Env, sender: Addr, amount: u64, allo_info: AlloInfo, proof: Vec<String>) -> Result<Response, ContractError> {
     let mut state: State = STATE.load(deps.storage)?;
 
     let end_time = state.public_start_time + state.presale_period;
     if env.block.time.seconds() > end_time || env.block.time.seconds() < state.public_start_time {
-        return Err(StdError::generic_err("presale not in progress"));
+        return Err(ContractError::PublicNotInProgress {});
     }
+
+    /******************************************/
+    /*             Verification               */
+    /******************************************/
+    if state.whitelist_merkle_root.len() > 0 {
+        let user_input = format!("{}{}{}", sender, allo_info.private_allocation, allo_info.public_allocation);
+        let hash = sha2::Sha256::digest(user_input.as_bytes())
+            .as_slice()
+            .try_into()
+            .map_err(|_| ContractError::WrongLength {})?;
+    
+        let hash = proof.into_iter().try_fold(hash, |hash, p| {
+            let mut proof_buf = [0; 32];
+            hex::decode_to_slice(p, &mut proof_buf)?;
+            let mut hashes = [hash, proof_buf];
+            hashes.sort_unstable();
+            sha2::Sha256::digest(&hashes.concat())
+                .as_slice()
+                .try_into()
+                .map_err(|_| ContractError::WrongLength {})
+        })?;
+    
+        let mut root_buf: [u8; 32] = [0; 32];
+        hex::decode_to_slice(state.whitelist_merkle_root.clone(), &mut root_buf)?;
+        if root_buf != hash {
+            return Err(ContractError::NotWhitelisted {});
+        }
+    }
+    /******************************************/
 
     let sender = sender.to_string();
-    let allo_info: GetUserResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-        contract_addr: state.whitelist.to_string(),
-        msg: to_binary(&whitelist::msg::QueryMsg::GetUser {
-            user: sender.clone(),
-        })?,
-    }))?;
-
-    if allo_info.data.wallet != sender.clone() {
-        return Err(StdError::generic_err("not whitelisted"));
-    }
-
     let mut recp_info = Participant {
         fund_balance: 0,
         reward_balance: 0
@@ -160,8 +205,8 @@ pub fn execute_deposit(deps: DepsMut, env: Env, sender: Addr, amount: u64) -> St
     }
 
     let new_fund_balance = recp_info.fund_balance + amount;
-    if allo_info.data.public_allocation + private_sold_fund < new_fund_balance {
-        return Err(StdError::generic_err("exceed allocation"));
+    if allo_info.public_allocation + private_sold_fund < new_fund_balance {
+        return Err(ContractError::ExceedAllocation {  });
     }
 
     let fund_token_info: TokenInfoResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
@@ -198,25 +243,43 @@ pub fn execute_deposit(deps: DepsMut, env: Env, sender: Addr, amount: u64) -> St
         .add_attribute("method", "deposit"))
 }
 
-pub fn execute_deposit_private_sale(deps: DepsMut, env: Env, sender: Addr, amount: u64) -> StdResult<Response> {
+pub fn execute_deposit_private_sale(deps: DepsMut, env: Env, sender: Addr, amount: u64, allo_info: AlloInfo, proof: Vec<String>) -> Result<Response, ContractError> {
     let mut state: State = STATE.load(deps.storage)?;
 
     if env.block.time.seconds() < state.private_start_time {
-        return Err(StdError::generic_err("private not in progress"));
+        return Err(ContractError::PrivateNotInProgress {  });
     }
+
+    /******************************************/
+    /*             Verification               */
+    /******************************************/
+    if state.whitelist_merkle_root.len() > 0 {
+        let user_input = format!("{}{}{}", sender, allo_info.private_allocation, allo_info.public_allocation);
+        let hash = sha2::Sha256::digest(user_input.as_bytes())
+            .as_slice()
+            .try_into()
+            .map_err(|_| ContractError::WrongLength {})?;
+
+        let hash = proof.into_iter().try_fold(hash, |hash, p| {
+            let mut proof_buf = [0; 32];
+            hex::decode_to_slice(p, &mut proof_buf)?;
+            let mut hashes = [hash, proof_buf];
+            hashes.sort_unstable();
+            sha2::Sha256::digest(&hashes.concat())
+                .as_slice()
+                .try_into()
+                .map_err(|_| ContractError::WrongLength {})
+        })?;
+
+        let mut root_buf: [u8; 32] = [0; 32];
+        hex::decode_to_slice(state.whitelist_merkle_root.clone(), &mut root_buf)?;
+        if root_buf != hash {
+            return Err(ContractError::NotWhitelisted {});
+        }
+    }
+    /******************************************/
 
     let sender = sender.to_string();
-    let allo_info: GetUserResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-        contract_addr: state.whitelist.to_string(),
-        msg: to_binary(&whitelist::msg::QueryMsg::GetUser {
-            user: sender.clone(),
-        })?,
-    }))?;
-
-    if allo_info.data.wallet != sender.clone() {
-        return Err(StdError::generic_err("not whitelisted"));
-    }
-
     let mut recp_info = Participant {
         fund_balance: 0,
         reward_balance: 0
@@ -230,8 +293,8 @@ pub fn execute_deposit_private_sale(deps: DepsMut, env: Env, sender: Addr, amoun
     }
 
     let new_fund_balance = recp_info.fund_balance + amount;
-    if allo_info.data.private_allocation < new_fund_balance {
-        return Err(StdError::generic_err("exceed allocation"));
+    if allo_info.private_allocation < new_fund_balance {
+        return Err(ContractError::ExceedAllocation {  });
     }
 
     let fund_token_info: TokenInfoResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
@@ -279,17 +342,17 @@ pub fn execute_deposit_private_sale(deps: DepsMut, env: Env, sender: Addr, amoun
         .add_attribute("method", "deposit_private"))
 }
 
-pub fn execute_withdraw_funds(deps: DepsMut, env: Env, info: MessageInfo, receiver: String) -> StdResult<Response> {
+pub fn execute_withdraw_funds(deps: DepsMut, env: Env, info: MessageInfo, receiver: String) -> Result<Response, ContractError> {
     let state: State = STATE.load(deps.storage)?;
 
     // permission check
     if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
-        return Err(StdError::generic_err("unauthorized"));
+        return Err(ContractError::Unauthorized {});
     }
 
     let end_time = state.public_start_time + state.presale_period;
     if env.block.time.seconds() <= end_time {
-        return Err(StdError::generic_err("presale in progress"));
+        return Err(ContractError::StillInProgress {  });
     }
 
     let fund_balance_info: BalanceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
@@ -313,17 +376,17 @@ pub fn execute_withdraw_funds(deps: DepsMut, env: Env, info: MessageInfo, receiv
         .add_attribute("method", "withdraw_funds"))
 }
 
-pub fn execute_withdraw_unsold_token(deps: DepsMut, env: Env, info: MessageInfo, receiver: String) -> StdResult<Response> {
+pub fn execute_withdraw_unsold_token(deps: DepsMut, env: Env, info: MessageInfo, receiver: String) -> Result<Response, ContractError> {
     let state: State = STATE.load(deps.storage)?;
 
     // permission check
     if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
-        return Err(StdError::generic_err("unauthorized"));
+        return Err(ContractError::Unauthorized {});
     }
 
     let end_time = state.public_start_time + state.presale_period;
     if env.block.time.seconds() <= end_time {
-        return Err(StdError::generic_err("presale in progress"));
+        return Err(ContractError::StillInProgress {  });
     }
 
     let reward_balance_info: BalanceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
@@ -351,17 +414,17 @@ pub fn execute_withdraw_unsold_token(deps: DepsMut, env: Env, info: MessageInfo,
         .add_attribute("method", "withdraw_unsold_token"))
 }
 
-pub fn execute_start_vesting(deps: DepsMut, env: Env, info: MessageInfo) -> StdResult<Response> {
+pub fn execute_start_vesting(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
     let state: State = STATE.load(deps.storage)?;
 
     // permission check
     if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
-        return Err(StdError::generic_err("unauthorized"));
+        return Err(ContractError::Unauthorized {});
     }
 
     let end_time = state.public_start_time + state.presale_period;
     if env.block.time.seconds() <= end_time {
-        return Err(StdError::generic_err("presale in progress"));
+        return Err(ContractError::StillInProgress {  });
     }
 
     let mut messages: Vec<CosmosMsg> = vec![];

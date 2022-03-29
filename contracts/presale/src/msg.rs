@@ -2,14 +2,14 @@ use cw20::Cw20ReceiveMsg;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::{Participant};
+use crate::state::{Participant, AlloInfo};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
     pub fund_token: String,
     pub reward_token: String,
     pub vesting: String,
-    pub whitelist: String,
+    pub whitelist_merkle_root: String,
 
     pub exchange_rate: u64,
     pub private_start_time: u64,
@@ -23,6 +23,10 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     TransferOwnerShip {
         new_owner: String
+    },
+    SetMerkleRoot {
+        /// MerkleRoot is hex-encoded merkle root.
+        merkle_root: String,
     },
     UpdatePresaleInfo {
         new_private_start_time: u64,
@@ -43,8 +47,14 @@ pub enum ExecuteMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Cw20HookMsg {
-    Deposit {},
-    DepositPrivateSale {},
+    Deposit {
+        allo_info: AlloInfo,
+        proof: Vec<String>,
+    },
+    DepositPrivateSale {
+        allo_info: AlloInfo,
+        proof: Vec<String>,
+    },
 }
 
 

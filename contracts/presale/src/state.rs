@@ -16,8 +16,8 @@ pub struct State {
     pub reward_token: CanonicalAddr,
     // Vesting Contract.
     pub vesting: CanonicalAddr,
-    // Whitelist Contract.
-    pub whitelist: CanonicalAddr,
+    // Whitelist Merkle Root.
+    pub whitelist_merkle_root: String,
 
     /************** Presale Params *************/
     // Fixed rate between fundToken vs rewardToken = reward / fund * ACCURACY.
@@ -46,6 +46,14 @@ pub struct Participant {
     pub fund_balance: u64,
     // Reward token amount need to be vested.
     pub reward_balance: u64,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct AlloInfo {
+    // Max allocation for this user in public presale
+    pub public_allocation: u64,
+    // Max allocation for this user in private presale
+    pub private_allocation: u64,
 }
 
 pub const STATE: Item<State> = Item::new("state");
