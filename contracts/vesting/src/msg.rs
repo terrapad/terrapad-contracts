@@ -19,6 +19,9 @@ pub enum ExecuteMsg {
     TransferOwnerShip {
         new_owner: String
     },
+    SetWorker {
+        worker: String
+    },
     UpdateRecipient {
         recp: String,
         amount: u64

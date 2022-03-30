@@ -47,7 +47,6 @@ pub enum ExecuteMsg {
     WithdrawUnsoldToken {
         receiver: String,
     },
-    StartVesting {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

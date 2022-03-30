@@ -1,0 +1,27 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "InstantiateMsg",
+  "type": "object",
+  "required": [
+    "dead",
+    "owner",
+    "penalty_period",
+    "token"
+  ],
+  "properties": {
+    "dead": {
+      "type": "string"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "penalty_period": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0.0
+    },
+    "token": {
+      "type": "string"
+    }
+  }
+}

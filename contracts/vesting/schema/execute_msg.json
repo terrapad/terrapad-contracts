@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ExecuteMsg",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "transfer_owner_ship"
+      ],
+      "properties": {
+        "transfer_owner_ship": {
+          "type": "object",
+          "required": [
+            "new_owner"
+          ],
+          "properties": {
+            "new_owner": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "set_worker"
+      ],
+      "properties": {
+        "set_worker": {
+          "type": "object",
+          "required": [
+            "worker"
+          ],
+          "properties": {
+            "worker": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "update_recipient"
+      ],
+      "properties": {
+        "update_recipient": {
+          "type": "object",
+          "required": [
+            "amount",
+            "recp"
+          ],
+          "properties": {
+            "amount": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            },
+            "recp": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "set_start_time"
+      ],
+      "properties": {
+        "set_start_time": {
+          "type": "object",
+          "required": [
+            "new_start_time"
+          ],
+          "properties": {
+            "new_start_time": {
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0.0
+            }
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "withdraw"
+      ],
+      "properties": {
+        "withdraw": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

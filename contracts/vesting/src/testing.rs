@@ -1,15 +1,9 @@
 use crate::contract::{execute, instantiate, query};
-use crate::mock_querier::mock_dependencies;
-use crate::msg::ExecuteMsg::UpdateConfig;
-use crate::msg::{
-    ConfigResponse, Cw20HookMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StakerInfoResponse,
-    StateResponse,
-};
-use cosmwasm_std::testing::{mock_env, mock_info};
+use crate::msg::{InstantiateMsg, ExecuteMsg, QueryMsg, AmountResponse, UsersCountResponse, GetUserResponse, GetUsersResponse};
+use cosmwasm_std::testing::{mock_env, mock_info, mock_dependencies};
 use cosmwasm_std::{
-    attr, from_binary, to_binary, CosmosMsg, Decimal, StdError, SubMsg, Uint128, WasmMsg,
+    from_binary, StdError, Timestamp,
 };
-use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
 
 #[test]
 fn test_initialize() {
@@ -173,6 +167,80 @@ fn test_vesting_amount() {
     assert_eq!(withdrawable.amount, user_vesting_amount);
 }
 
+
+#[test]
+fn test_query() {
+    let env = mock_env();
+    let mut deps = mock_dependencies(&[]);
+    let init_msg = InstantiateMsg {
+        reward_token: "reward_token".to_string(),
+        release_interval: 60,
+        release_rate: 100,
+        initial_unlock: 100,
+        lock_period: 600,
+        vesting_period: 6000,
+    };
+    let info = mock_info(&"owner".to_string(), &[]);
+    instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg.clone()).unwrap();
+
+    // update vesting info of `user`
+    let user_vesting_amount: u64 = 1000;
+    let msg = ExecuteMsg::UpdateRecipient { recp: "user".to_string(), amount: user_vesting_amount };
+    execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+
+    let user_response: GetUserResponse = from_binary(
+        &query(deps.as_ref(), env.clone(), QueryMsg::GetUser { user: "user".to_string() }).unwrap(),
+    ).unwrap();
+    assert_eq!(user_response.data.total_amount, user_vesting_amount);
+    assert_eq!(user_response.data.withrawn_amount, 0);
+
+    let users_response: GetUsersResponse = from_binary(
+        &query(deps.as_ref(), env.clone(), QueryMsg::GetUsers { page: 0, limit: 10 }).unwrap(),
+    ).unwrap();
+    assert_eq!(users_response.users.len(), 1);
+    assert_eq!(users_response.users[0], "user".to_string());
+
+    let count_response: UsersCountResponse = from_binary(
+        &query(deps.as_ref(), env.clone(), QueryMsg::UsersCount {  }).unwrap(),
+    ).unwrap();
+    assert_eq!(count_response.count, 1);
+}
+
+#[test]
+fn test_query_bulk() {
+    let env = mock_env();
+    let mut deps = mock_dependencies(&[]);
+    let init_msg = InstantiateMsg {
+        reward_token: "reward_token".to_string(),
+        release_interval: 60,
+        release_rate: 100,
+        initial_unlock: 100,
+        lock_period: 600,
+        vesting_period: 6000,
+    };
+    let info = mock_info(&"owner".to_string(), &[]);
+    instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg.clone()).unwrap();
+
+    // update vesting info of `user`
+    let count = 1000;
+    for i in 0..count {
+        let user_vesting_amount: u64 = 1000;
+        let msg = ExecuteMsg::UpdateRecipient { recp: format!("{}", i), amount: user_vesting_amount };
+        execute(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
+    }
+    let count_response: UsersCountResponse = from_binary(
+        &query(deps.as_ref(), env.clone(), QueryMsg::UsersCount {  }).unwrap(),
+    ).unwrap();
+    assert_eq!(count_response.count, count);
+
+    let users_response: GetUsersResponse = from_binary(
+        &query(deps.as_ref(), env.clone(), QueryMsg::GetUsers { page: 0, limit: 1000 }).unwrap(),
+    ).unwrap();
+    assert_eq!(users_response.users.len(), count as usize);
+    for i in 0..count {
+        assert_eq!(users_response.users[i as usize], format!("{}", i));
+    }
+}
 
 #[test]
 fn test_withdraw() {

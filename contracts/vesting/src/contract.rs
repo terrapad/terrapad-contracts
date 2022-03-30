@@ -15,6 +15,7 @@ pub fn instantiate(
 ) -> StdResult<Response> {
     let state = State {
         owner: deps.api.addr_canonicalize(info.sender.as_str())?,
+        worker: deps.api.addr_canonicalize(info.sender.as_str())?,
         reward_token: deps.api.addr_canonicalize(msg.reward_token.as_str())?,
         release_interval: msg.release_interval,
         release_rate: msg.release_rate,
@@ -43,6 +44,7 @@ pub fn execute(
 ) -> StdResult<Response> {
     match msg {
         ExecuteMsg::TransferOwnerShip { new_owner } => execute_transfer_ownership(deps, info, new_owner),
+        ExecuteMsg::SetWorker { worker } => execute_set_worker(deps, info, worker),
         ExecuteMsg::SetStartTime { new_start_time } => execute_set_start_time(deps, info, new_start_time),
         ExecuteMsg::UpdateRecipient { recp, amount } => execute_update_recipient(deps, _env, info, recp, amount),
         ExecuteMsg::Withdraw {} => execute_withdraw(deps, _env, info)
@@ -61,11 +63,29 @@ pub fn execute_transfer_ownership(deps: DepsMut, info: MessageInfo, new_owner: S
     state.owner = new_owner.clone();
     STATE.save(deps.storage, &state)?;
 
+    let messages: Vec<CosmosMsg> = vec![];
+    Ok(Response::new()
+        .add_messages(messages)
+        .add_attribute("method", "transfer_ownership"))
+}
+
+pub fn execute_set_worker(deps: DepsMut, info: MessageInfo, worker: String) -> StdResult<Response> {
+    let worker = deps.api.addr_canonicalize(worker.as_str())?;
+    let mut state: State = STATE.load(deps.storage)?;
+
+    // permission check
+    if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
+        return Err(StdError::generic_err("unauthorized"));
+    }
+
+    state.worker = worker.clone();
+    STATE.save(deps.storage, &state)?;
+
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
         contract_addr: state.reward_token.to_string(),
         msg: to_binary(&Cw20ExecuteMsg::IncreaseAllowance {
-            spender: new_owner.to_string(),
+            spender: worker.to_string(),
             amount: Uint128::MAX,
             expires: None
         })?,
@@ -73,7 +93,7 @@ pub fn execute_transfer_ownership(deps: DepsMut, info: MessageInfo, new_owner: S
     }));
     Ok(Response::new()
         .add_messages(messages)
-        .add_attribute("method", "transfer_ownership"))
+        .add_attribute("method", "set_worker"))
 }
 
 pub fn execute_set_start_time(deps: DepsMut, info: MessageInfo, new_start_time: u64) -> StdResult<Response> {
@@ -94,7 +114,8 @@ pub fn execute_update_recipient(deps: DepsMut, env: Env, info: MessageInfo, recp
     let mut state: State = STATE.load(deps.storage)?;
 
     // permission check
-    if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
+    let sender_canonical = deps.api.addr_canonicalize(info.sender.as_str())?;
+    if sender_canonical != state.owner && sender_canonical != state.worker {
         return Err(StdError::generic_err("unauthorized"));
     }
 
@@ -107,7 +128,7 @@ pub fn execute_update_recipient(deps: DepsMut, env: Env, info: MessageInfo, recp
     if RECIPIENTS.has(deps.storage, recp.clone()) {
         let recp_info = RECIPIENTS.load(deps.storage, recp.clone())?;
         state.total_vesting_amount = state.total_vesting_amount - recp_info.total_amount;
-
+    } else {
         state.userlist.push(recp.clone());
     }
     RECIPIENTS.save(deps.storage, recp.clone(), &UserInfo { total_amount: amount, withrawn_amount: 0 })?;
@@ -168,7 +189,10 @@ fn query_users(deps: Deps, page: u64, limit: u64) -> StdResult<GetUsersResponse>
     let state: State = STATE.load(deps.storage)?;
 
     let start = (page * limit) as usize;
-    let end = (page * limit + limit) as usize;
+    let mut end = (page * limit + limit) as usize;
+    if end > state.userlist.len() {
+        end = state.userlist.len()
+    };
 
     Ok(GetUsersResponse { users: state.userlist[start..end].to_vec() })
 }

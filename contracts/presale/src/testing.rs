@@ -1,30 +1,26 @@
-use crate::contract::{execute, instantiate, query};
-use crate::mock_querier::mock_dependencies;
-use crate::msg::ExecuteMsg::UpdateConfig;
-use crate::msg::{
-    ConfigResponse, Cw20HookMsg, ExecuteMsg, InstantiateMsg, QueryMsg, StakerInfoResponse,
-    StateResponse,
-};
-use cosmwasm_std::testing::{mock_env, mock_info};
+use crate::contract::{execute, instantiate};
+use crate::error::ContractError;
+use crate::msg::{InstantiateMsg, ExecuteMsg};
+use cosmwasm_std::testing::{mock_env, mock_info, mock_dependencies};
 use cosmwasm_std::{
-    attr, from_binary, to_binary, CosmosMsg, Decimal, StdError, SubMsg, Uint128, WasmMsg,
+    Uint128,
 };
-use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
+
 
 #[test]
 fn test_initialize() {
     let mut deps = mock_dependencies(&[]);
     let init_msg = InstantiateMsg {
-        fund_token: "fund_token".to_string(),
+        fund_denom: "uusd".to_string(),
         reward_token: "reward_token".to_string(),
         vesting: "vesting".to_string(),
-        whitelist: "whitelist".to_string(),
+        whitelist_merkle_root: "root".to_string(),
 
-        exchange_rate: 1,
+        exchange_rate: Uint128::from(1u128),
         private_start_time: 0,
         public_start_time: 0,
         presale_period: 100,
-        distribution_amount: 1000,
+        distribution_amount: Uint128::from(1000u128),
     };
     let info = mock_info(&"owner".to_string(), &[]);
     let _ = instantiate(deps.as_mut(), mock_env(), info, init_msg).unwrap();
@@ -36,16 +32,16 @@ fn test_initialize() {
 fn test_security() {
     let mut deps = mock_dependencies(&[]);
     let init_msg = InstantiateMsg {
-        fund_token: "fund_token".to_string(),
+        fund_denom: "uusd".to_string(),
         reward_token: "reward_token".to_string(),
         vesting: "vesting".to_string(),
-        whitelist: "whitelist".to_string(),
+        whitelist_merkle_root: "root".to_string(),
 
-        exchange_rate: 1,
+        exchange_rate: Uint128::from(1u128),
         private_start_time: 0,
         public_start_time: 0,
         presale_period: 100,
-        distribution_amount: 1000,
+        distribution_amount: Uint128::from(1000u128),
     };
     let info = mock_info(&"owner".to_string(), &[]);
     let _ = instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
@@ -64,7 +60,7 @@ fn test_security() {
         update_msg.clone(),
     );
     match res {
-        Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "unauthorized"),
+        Err(ContractError::Unauthorized { }) => {},
         _ => panic!("Invalid error"),
     }
 
@@ -75,7 +71,7 @@ fn test_security() {
         transfer_ownership_msg.clone(),
     );
     match res {
-        Err(StdError::GenericErr { msg, .. }) => assert_eq!(msg, "unauthorized"),
+        Err(ContractError::Unauthorized { }) => {},
         _ => panic!("Invalid error"),
     }
 

@@ -25,6 +25,8 @@ pub struct State {
     /************** Status Info *************/
     // Owner address(presale or the vesting runner)
     pub owner: CanonicalAddr,
+    // Worker address(presale or the vesting runner)
+    pub worker: CanonicalAddr,
     // Sum of all user's vesting amount
     pub total_vesting_amount: u64,
     // Participants address list

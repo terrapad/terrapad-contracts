@@ -71,8 +71,6 @@ pub fn execute(
         ExecuteMsg::WithdrawFunds { receiver } => execute_withdraw_funds(deps, _env, info, receiver),
 
         ExecuteMsg::WithdrawUnsoldToken { receiver } => execute_withdraw_unsold_token(deps, _env, info, receiver),
-
-        ExecuteMsg::StartVesting {} => execute_start_vesting(deps, _env, info)
     }
 }
 
@@ -379,32 +377,6 @@ pub fn execute_withdraw_unsold_token(deps: DepsMut, env: Env, info: MessageInfo,
     Ok(Response::new()
         .add_messages(messages)
         .add_attribute("method", "withdraw_unsold_token"))
-}
-
-pub fn execute_start_vesting(deps: DepsMut, env: Env, info: MessageInfo) -> Result<Response, ContractError> {
-    let state: State = read_state(deps.storage)?;
-
-    // permission check
-    if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
-        return Err(ContractError::Unauthorized {});
-    }
-
-    let end_time = state.public_start_time + state.presale_period;
-    if env.block.time.seconds() <= end_time {
-        return Err(ContractError::StillInProgress {  });
-    }
-
-    let mut messages: Vec<CosmosMsg> = vec![];
-    messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: state.reward_token.to_string(),
-        msg: to_binary(&vesting::msg::ExecuteMsg::SetStartTime {
-            new_start_time: env.block.time.seconds() + 1
-        })?,
-        funds: vec![],
-    }));
-    Ok(Response::new()
-        .add_messages(messages)
-        .add_attribute("method", "start_vesting"))
 }
 
 /************************************ Query *************************************/
