@@ -28,6 +28,7 @@ cw20 = { version = "0.8.0" }
 cw721 = { version = "0.8.0" }
 cw721-base = { version = "0.8.0", features = ["library"] }
 cosmwasm-std = { version = "0.16.0" }
+cosmwasm-storage = { version = "0.16.0", features = ["iterator"] }
 cw-storage-plus = { version = "0.8.0" }
 integer-sqrt = "0.1.5"
 schemars = "0.8.1"

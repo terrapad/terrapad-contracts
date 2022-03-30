@@ -36,4 +36,7 @@ pub enum ContractError {
 
     #[error("Verification failed")]
     VerificationFailed {},
+
+    #[error("Funds not paid")]
+    Funds {}    
 }

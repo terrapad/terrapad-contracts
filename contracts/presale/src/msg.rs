@@ -1,4 +1,4 @@
-use cw20::Cw20ReceiveMsg;
+use cosmwasm_std::Uint128;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -6,16 +6,16 @@ use crate::state::{Participant, AlloInfo};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
-    pub fund_token: String,
+    pub fund_denom: String,
     pub reward_token: String,
     pub vesting: String,
     pub whitelist_merkle_root: String,
 
-    pub exchange_rate: u64,
+    pub exchange_rate: Uint128,
     pub private_start_time: u64,
     pub public_start_time: u64,
     pub presale_period: u64,
-    pub distribution_amount: u64,
+    pub distribution_amount: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -33,7 +33,14 @@ pub enum ExecuteMsg {
         new_public_start_time: u64,
         new_presale_period: u64
     },
-    Receive(Cw20ReceiveMsg),
+    Deposit {
+        allo_info: AlloInfo,
+        proof: Vec<String>,
+    },
+    DepositPrivateSale {
+        allo_info: AlloInfo,
+        proof: Vec<String>,
+    },
     WithdrawFunds {
         receiver: String,
     },
@@ -43,25 +50,11 @@ pub enum ExecuteMsg {
     StartVesting {},
 }
 
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Cw20HookMsg {
-    Deposit {
-        allo_info: AlloInfo,
-        proof: Vec<String>,
-    },
-    DepositPrivateSale {
-        allo_info: AlloInfo,
-        proof: Vec<String>,
-    },
-}
-
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     ParticipantsCount {},
+    GetSaleStatus {},
     GetParticipants {
         page: u64,
         limit: u64,
@@ -69,7 +62,6 @@ pub enum QueryMsg {
     GetParticipant {
         user: String,
     },
-    GetSaleStatus {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -89,6 +81,6 @@ pub struct GetParticipantResponse {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct GetSaleStatusResponse {
-    pub private_sold_amount: u64,
-    pub public_sold_amount: u64
+    pub private_sold_amount: Uint128,
+    pub public_sold_amount: Uint128
 }
