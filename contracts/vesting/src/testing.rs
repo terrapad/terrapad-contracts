@@ -15,6 +15,7 @@ fn test_initialize() {
         initial_unlock: 10,
         lock_period: 600,
         vesting_period: 6000,
+        distribution_amount: 1000000,
     };
     let info = mock_info(&"owner".to_string(), &[]);
     let _ = instantiate(deps.as_mut(), mock_env(), info, init_msg).unwrap();
@@ -32,6 +33,7 @@ fn test_security() {
         initial_unlock: 10,
         lock_period: 600,
         vesting_period: 6000,
+        distribution_amount: 1000000,
     };
     let info = mock_info(&"owner".to_string(), &[]);
     let _ = instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
@@ -88,6 +90,7 @@ fn test_vesting_amount() {
         initial_unlock: 100,
         lock_period: 600,
         vesting_period: 6000,
+        distribution_amount: 1000000,
     };
     let info = mock_info(&"owner".to_string(), &[]);
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg.clone()).unwrap();
@@ -179,6 +182,7 @@ fn test_query() {
         initial_unlock: 100,
         lock_period: 600,
         vesting_period: 6000,
+        distribution_amount: 1000000,
     };
     let info = mock_info(&"owner".to_string(), &[]);
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg.clone()).unwrap();
@@ -217,6 +221,7 @@ fn test_query_bulk() {
         initial_unlock: 100,
         lock_period: 600,
         vesting_period: 6000,
+        distribution_amount: 1000000,
     };
     let info = mock_info(&"owner".to_string(), &[]);
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg.clone()).unwrap();
@@ -252,6 +257,7 @@ fn test_withdraw() {
         initial_unlock: 100,
         lock_period: 600,
         vesting_period: 6000,
+        distribution_amount: 1000000,
     };
     let info = mock_info(&"owner".to_string(), &[]);
     instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg.clone()).unwrap();

@@ -29,7 +29,6 @@ pub fn instantiate(
         presale_period: msg.presale_period,
         public_start_time: msg.public_start_time,
         private_start_time: msg.private_start_time,
-        distribution_amount: msg.distribution_amount,
 
         private_sold_amount: Uint128::zero(),
         public_sold_amount: Uint128::zero(),

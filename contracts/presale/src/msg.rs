@@ -15,7 +15,6 @@ pub struct InstantiateMsg {
     pub private_start_time: u64,
     pub public_start_time: u64,
     pub presale_period: u64,
-    pub distribution_amount: Uint128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

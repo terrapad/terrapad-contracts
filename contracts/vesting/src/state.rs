@@ -21,6 +21,8 @@ pub struct State {
     pub vesting_period: u64,
     // Reward token of the project.
     pub reward_token: CanonicalAddr,
+    // Total reward token amount
+    pub distribution_amount: u64,
 
     /************** Status Info *************/
     // Owner address(presale or the vesting runner)

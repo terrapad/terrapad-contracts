@@ -24,7 +24,8 @@ pub fn instantiate(
         vesting_period: msg.vesting_period,
         userlist: vec![],
         start_time: 0,
-        total_vesting_amount: 0
+        total_vesting_amount: 0,
+        distribution_amount: msg.distribution_amount
     };
 
     STATE.save(deps.storage, &state)?;
@@ -134,6 +135,9 @@ pub fn execute_update_recipient(deps: DepsMut, env: Env, info: MessageInfo, recp
     RECIPIENTS.save(deps.storage, recp.clone(), &UserInfo { total_amount: amount, withrawn_amount: 0 })?;
 
     state.total_vesting_amount = state.total_vesting_amount + amount;
+    if state.total_vesting_amount > state.distribution_amount {
+        return Err(StdError::generic_err("exceed total distribution amount"));
+    }
     STATE.save(deps.storage, &state)?;
 
     Ok(Response::new().add_attribute("method", "update_recipient"))

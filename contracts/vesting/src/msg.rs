@@ -11,6 +11,7 @@ pub struct InstantiateMsg {
     pub initial_unlock: u64,
     pub lock_period: u64,
     pub vesting_period: u64,
+    pub distribution_amount: u64
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
