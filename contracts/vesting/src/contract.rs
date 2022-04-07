@@ -208,7 +208,8 @@ fn query_users(deps: Deps, page: u64, limit: u64) -> StdResult<GetUsersResponse>
 }
 
 fn query_user(deps: Deps, user: String) -> StdResult<GetUserResponse> {
-    Ok(GetUserResponse { data: RECIPIENTS.load(deps.storage, user)? })
+    let recp_data = RECIPIENTS.load(deps.storage, user).unwrap_or(UserInfo { total_amount: 0, withrawn_amount: 0 });
+    Ok(GetUserResponse { data: recp_data })
 }
 
 fn query_vested(deps: Deps, env: Env, user: String) -> StdResult<AmountResponse> {
@@ -216,7 +217,7 @@ fn query_vested(deps: Deps, env: Env, user: String) -> StdResult<AmountResponse>
 
     let lock_end_time = state.start_time + state.lock_period;
     let vesting_end_time = lock_end_time + state.vesting_period;
-    let recpinfo = RECIPIENTS.load(deps.storage, user)?;
+    let recpinfo = RECIPIENTS.load(deps.storage, user).unwrap_or(UserInfo { total_amount: 0, withrawn_amount: 0 });
 
     let amount: u64;
     if state.start_time == 0 || recpinfo.total_amount == 0 || env.block.time.seconds() < lock_end_time {
@@ -235,14 +236,14 @@ fn query_vested(deps: Deps, env: Env, user: String) -> StdResult<AmountResponse>
 }
 
 fn query_locked(deps: Deps, env: Env, user: String) -> StdResult<AmountResponse> {
-    let recpinfo = RECIPIENTS.load(deps.storage, user.clone())?;
+    let recpinfo = RECIPIENTS.load(deps.storage, user.clone()).unwrap_or(UserInfo { total_amount: 0, withrawn_amount: 0 });
     let vested = query_vested(deps, env, user.clone())?;
 
     Ok(AmountResponse { amount: recpinfo.total_amount - vested.amount })
 }
 
 fn query_withdrawable(deps: Deps, env: Env, user: String) -> StdResult<AmountResponse> {
-    let recpinfo = RECIPIENTS.load(deps.storage, user.clone())?;
+    let recpinfo = RECIPIENTS.load(deps.storage, user.clone()).unwrap_or(UserInfo { total_amount: 0, withrawn_amount: 0 });
     let vested = query_vested(deps, env, user.clone())?;
 
     Ok(AmountResponse { amount: vested.amount - recpinfo.withrawn_amount })

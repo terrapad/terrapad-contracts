@@ -411,7 +411,8 @@ fn query_participants(deps: Deps, page: u64, limit: u64) -> StdResult<GetPartici
 }
 
 fn query_participant(deps: Deps, user: String) -> StdResult<GetParticipantResponse> {
-    Ok(GetParticipantResponse { data: PARTICIPANTS.load(deps.storage, user)? })
+    let data = PARTICIPANTS.load(deps.storage, user).unwrap_or(Participant { fund_balance: Uint128::zero(), reward_balance: Uint128::zero() });
+    Ok(GetParticipantResponse { data })
 }
 
 fn query_sale_status(deps: Deps) -> StdResult<GetSaleStatusResponse> {
