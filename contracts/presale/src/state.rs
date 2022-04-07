@@ -31,6 +31,8 @@ pub struct State {
     pub public_start_time: u64,
     // Private Presale Start Time.
     pub private_start_time: u64,
+    // Total reward token amount
+    pub total_rewards_amount: Uint128,
 
     /************** Status Info *************/
     // Reward token amount sold by private sale

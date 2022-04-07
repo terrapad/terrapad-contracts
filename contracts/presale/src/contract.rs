@@ -7,7 +7,7 @@ use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, BalanceResponse };
 use sha2::Digest;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, ParticipantsCountResponse, GetParticipantResponse, GetParticipantsResponse, GetSaleStatusResponse, MigrateMsg};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, ParticipantsCountResponse, GetParticipantResponse, GetParticipantsResponse, GetSaleStatusResponse, MigrateMsg, PresaleInfoResponse};
 use crate::querier::{query_decimals, query_balance};
 use crate::state::{PARTICIPANTS, PRIVATE_SOLD_FUNDS, ACCURACY, State, Participant, AlloInfo, store_state, read_state};
 
@@ -29,6 +29,7 @@ pub fn instantiate(
         presale_period: msg.presale_period,
         public_start_time: msg.public_start_time,
         private_start_time: msg.private_start_time,
+        total_rewards_amount: msg.total_rewards_amount,
 
         private_sold_amount: Uint128::zero(),
         public_sold_amount: Uint128::zero(),
@@ -393,6 +394,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         QueryMsg::GetParticipants { page, limit } => to_binary(&query_participants(deps, page, limit)?),
         QueryMsg::GetParticipant { user } => to_binary(&query_participant(deps, user)?),
         QueryMsg::GetSaleStatus { } => to_binary( &query_sale_status(deps)? ),
+        QueryMsg::PresaleInfo { } => to_binary( &query_presale_info(deps)? )
     }
 }
 
@@ -418,5 +420,18 @@ fn query_participant(deps: Deps, user: String) -> StdResult<GetParticipantRespon
 fn query_sale_status(deps: Deps) -> StdResult<GetSaleStatusResponse> {
     let state: State = read_state(deps.storage)?;
     Ok(GetSaleStatusResponse { private_sold_amount: state.private_sold_amount, public_sold_amount: state.public_sold_amount })
+}
+
+fn query_presale_info(deps: Deps) -> StdResult<PresaleInfoResponse> {
+    let state: State = read_state(deps.storage)?;
+    Ok(PresaleInfoResponse {
+        owner: deps.api.addr_humanize(&state.owner)?.to_string(),
+        accuracy: Uint128::from(ACCURACY),
+        exchange_rate: state.exchange_rate,
+        presale_period: state.presale_period,
+        public_start_time: state.public_start_time,
+        private_start_time: state.private_start_time,
+        total_rewards_amount: state.total_rewards_amount
+    })
 }
 

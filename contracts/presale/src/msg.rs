@@ -15,6 +15,8 @@ pub struct InstantiateMsg {
     pub private_start_time: u64,
     pub public_start_time: u64,
     pub presale_period: u64,
+
+    pub total_rewards_amount: Uint128
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema)]
@@ -63,6 +65,7 @@ pub enum QueryMsg {
     GetParticipant {
         user: String,
     },
+    PresaleInfo {}
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -84,4 +87,22 @@ pub struct GetParticipantResponse {
 pub struct GetSaleStatusResponse {
     pub private_sold_amount: Uint128,
     pub public_sold_amount: Uint128
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct PresaleInfoResponse {
+    // owner
+    pub owner: String,
+    // Accuracy
+    pub accuracy: Uint128,
+    // Exchange rate
+    pub exchange_rate: Uint128,
+    // Presale Period.
+    pub presale_period: u64,
+    // Public Presale Start Time.
+    pub public_start_time: u64,
+    // Private Presale Start Time.
+    pub private_start_time: u64,
+    // Accuracy
+    pub total_rewards_amount: Uint128,
 }

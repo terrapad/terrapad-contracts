@@ -21,6 +21,8 @@ fn test_initialize() {
         private_start_time: 0,
         public_start_time: 0,
         presale_period: 100,
+
+        total_rewards_amount: Uint128::from(1000000u128)
     };
     let info = mock_info(&"owner".to_string(), &[]);
     let _ = instantiate(deps.as_mut(), mock_env(), info, init_msg).unwrap();
@@ -41,6 +43,8 @@ fn test_security() {
         private_start_time: 0,
         public_start_time: 0,
         presale_period: 100,
+
+        total_rewards_amount: Uint128::from(1000000u128)
     };
     let info = mock_info(&"owner".to_string(), &[]);
     let _ = instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
@@ -91,6 +95,7 @@ fn test_deposit() {
         private_start_time: 0,
         public_start_time: 0,
         presale_period: 1000,
+        total_rewards_amount: Uint128::from(1000000u128)
     };
     let info = mock_info(&"owner".to_string(), &[]);
     let _ = instantiate(deps.as_mut(), mock_env(), info.clone(), init_msg).unwrap();
