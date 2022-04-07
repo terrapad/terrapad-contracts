@@ -3,7 +3,7 @@ use cosmwasm_std::entry_point;
 use cosmwasm_std::{to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult, StdError, CosmosMsg, WasmMsg, Uint128};
 use cw20::Cw20ExecuteMsg;
 
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, UsersCountResponse, GetUserResponse, GetUsersResponse, AmountResponse};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, UsersCountResponse, GetUserResponse, GetUsersResponse, AmountResponse, MigrateMsg};
 use crate::state::{RECIPIENTS, UserInfo, State, STATE, ACCURACY};
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -33,6 +33,12 @@ pub fn instantiate(
     Ok(Response::new())
 }
 
+/************************************ Migration *************************************/
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    Ok(Response::new())
+}
 
 /************************************ Execution *************************************/
 
@@ -84,9 +90,9 @@ pub fn execute_set_worker(deps: DepsMut, info: MessageInfo, worker: String) -> S
 
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: state.reward_token.to_string(),
+        contract_addr: deps.api.addr_humanize(&state.reward_token)?.to_string(),
         msg: to_binary(&Cw20ExecuteMsg::IncreaseAllowance {
-            spender: worker.to_string(),
+            spender: deps.api.addr_humanize(&worker)?.to_string(),
             amount: Uint128::MAX,
             expires: None
         })?,
@@ -158,7 +164,7 @@ pub fn execute_withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> StdResult
 
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: state.reward_token.to_string(),
+        contract_addr: deps.api.addr_humanize(&state.reward_token)?.to_string(),
         msg: to_binary(&Cw20ExecuteMsg::Transfer {
             recipient: sender.clone(),
             amount: Uint128::from(withdrawable.amount),

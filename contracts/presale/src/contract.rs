@@ -7,7 +7,7 @@ use cw20::{Cw20ExecuteMsg, Cw20QueryMsg, BalanceResponse };
 use sha2::Digest;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, ParticipantsCountResponse, GetParticipantResponse, GetParticipantsResponse, GetSaleStatusResponse};
+use crate::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, ParticipantsCountResponse, GetParticipantResponse, GetParticipantsResponse, GetSaleStatusResponse, MigrateMsg};
 use crate::querier::{query_decimals, query_balance};
 use crate::state::{PARTICIPANTS, PRIVATE_SOLD_FUNDS, ACCURACY, State, Participant, AlloInfo, store_state, read_state};
 
@@ -40,6 +40,12 @@ pub fn instantiate(
     Ok(Response::new())
 }
 
+/************************************ Migration *************************************/
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    Ok(Response::new())
+}
 
 /************************************ Execution *************************************/
 
@@ -131,7 +137,7 @@ pub fn execute_update_info(deps: DepsMut, info: MessageInfo, new_private_start_t
 
 pub fn calc_reward_amount(deps: Deps, state: State, fund_amount: Uint128) -> StdResult<Uint128> {
     let fund_decimals: u32 = 6;
-    let reward_decimals = query_decimals(deps, state.reward_token.to_string())?;
+    let reward_decimals = query_decimals(deps, deps.api.addr_humanize(&state.reward_token)?.to_string())?;
 
     Ok(fund_amount
         .checked_mul(Uint128::from(ACCURACY)).unwrap()
@@ -226,7 +232,7 @@ pub fn execute_deposit(deps: DepsMut, env: Env, info: MessageInfo, allo_info: Al
     /* Update vesting */
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: state.vesting.to_string(),
+        contract_addr: deps.api.addr_humanize(&state.vesting)?.to_string(),
         msg: to_binary(&vesting::msg::ExecuteMsg::UpdateRecipient {
             recp: sender.clone(),
             amount: recp_info.reward_balance.u128().try_into().unwrap(),
@@ -300,7 +306,7 @@ pub fn execute_deposit_private_sale(deps: DepsMut, env: Env, info: MessageInfo, 
     /* Update vesting */
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: state.vesting.to_string(),
+        contract_addr: deps.api.addr_humanize(&state.vesting)?.to_string(),
         msg: to_binary(&vesting::msg::ExecuteMsg::UpdateRecipient {
             recp: sender.clone(),
             amount: recp_info.reward_balance.u128().try_into().unwrap(),
@@ -354,9 +360,9 @@ pub fn execute_withdraw_unsold_token(deps: DepsMut, env: Env, info: MessageInfo,
     }
 
     let reward_balance_info: BalanceResponse = deps.querier.query(&QueryRequest::Wasm(WasmQuery::Smart {
-        contract_addr: state.reward_token.to_string(),
+        contract_addr: deps.api.addr_humanize(&state.reward_token)?.to_string(),
         msg: to_binary(&Cw20QueryMsg::Balance {
-            address: state.vesting.to_string()
+            address: deps.api.addr_humanize(&state.vesting)?.to_string()
         })?,
     }))?;
 
@@ -365,9 +371,9 @@ pub fn execute_withdraw_unsold_token(deps: DepsMut, env: Env, info: MessageInfo,
 
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(CosmosMsg::Wasm(WasmMsg::Execute {
-        contract_addr: state.reward_token.to_string(),
+        contract_addr: deps.api.addr_humanize(&state.reward_token)?.to_string(),
         msg: to_binary(&Cw20ExecuteMsg::TransferFrom {
-            owner: state.vesting.to_string(),
+            owner: deps.api.addr_humanize(&state.vesting)?.to_string(),
             recipient: receiver.clone(),
             amount: unsold_amount,
         })?,
