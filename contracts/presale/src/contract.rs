@@ -14,7 +14,7 @@ use crate::state::{PARTICIPANTS, PRIVATE_SOLD_FUNDS, ACCURACY, State, Participan
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
@@ -44,7 +44,7 @@ pub fn instantiate(
 /************************************ Migration *************************************/
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+pub fn migrate(_deps: DepsMut, env: Env, _msg: MigrateMsg) -> StdResult<Response> {
     Ok(Response::new())
 }
 
@@ -53,7 +53,7 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Respons
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
@@ -68,15 +68,15 @@ pub fn execute(
             new_private_start_time,
             new_public_start_time,
             new_presale_period
-        } => execute_update_info(deps, info, new_private_start_time, new_public_start_time, new_presale_period),
+        } => execute_update_info(deps, env, info, new_private_start_time, new_public_start_time, new_presale_period),
 
-        ExecuteMsg::Deposit { allo_info, proof } => execute_deposit(deps, _env, info, allo_info, proof),
+        ExecuteMsg::Deposit { allo_info, proof } => execute_deposit(deps, env, info, allo_info, proof),
 
-        ExecuteMsg::DepositPrivateSale { allo_info, proof } => execute_deposit_private_sale(deps, _env, info, allo_info, proof),
+        ExecuteMsg::DepositPrivateSale { allo_info, proof } => execute_deposit_private_sale(deps, env, info, allo_info, proof),
 
-        ExecuteMsg::WithdrawFunds { receiver } => execute_withdraw_funds(deps, _env, info, receiver),
+        ExecuteMsg::WithdrawFunds { receiver } => execute_withdraw_funds(deps, env, info, receiver),
 
-        ExecuteMsg::WithdrawUnsoldToken { receiver } => execute_withdraw_unsold_token(deps, _env, info, receiver),
+        ExecuteMsg::WithdrawUnsoldToken { receiver } => execute_withdraw_unsold_token(deps, env, info, receiver),
     }
 }
 
@@ -115,12 +115,16 @@ pub fn execute_set_whitelist_merkle_root(deps: DepsMut, info: MessageInfo, merkl
     ]))
 }
 
-pub fn execute_update_info(deps: DepsMut, info: MessageInfo, new_private_start_time: u64, new_public_start_time: u64, new_presale_period: u64) -> Result<Response, ContractError> {
+pub fn execute_update_info(deps: DepsMut, env: Env, info: MessageInfo, new_private_start_time: u64, new_public_start_time: u64, new_presale_period: u64) -> Result<Response, ContractError> {
     let mut state: State = read_state(deps.storage)?;
 
     // permission check
     if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
         return Err(ContractError::Unauthorized {});
+    }
+
+    if new_private_start_time < env.block.time.seconds() ||  new_public_start_time < env.block.time.seconds() {
+        return Err(ContractError::InvalidInput {});
     }
 
     state.private_start_time = new_private_start_time;
@@ -321,6 +325,7 @@ pub fn execute_deposit_private_sale(deps: DepsMut, env: Env, info: MessageInfo, 
 
 pub fn execute_withdraw_funds(deps: DepsMut, env: Env, info: MessageInfo, receiver: String) -> Result<Response, ContractError> {
     let state: State = read_state(deps.storage)?;
+    let receiver_addr = deps.api.addr_validate(&receiver)?;
 
     // permission check
     if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
@@ -336,7 +341,7 @@ pub fn execute_withdraw_funds(deps: DepsMut, env: Env, info: MessageInfo, receiv
 
     let mut messages: Vec<CosmosMsg> = vec![];
     messages.push(CosmosMsg::Bank(BankMsg::Send {
-        to_address: receiver,
+        to_address: receiver_addr.to_string(),
         amount: vec![Coin {
             denom: state.fund_denom.to_string(),
             amount: fund_balance.clone(),
@@ -349,6 +354,7 @@ pub fn execute_withdraw_funds(deps: DepsMut, env: Env, info: MessageInfo, receiv
 
 pub fn execute_withdraw_unsold_token(deps: DepsMut, env: Env, info: MessageInfo, receiver: String) -> Result<Response, ContractError> {
     let state: State = read_state(deps.storage)?;
+    let receiver_addr = deps.api.addr_validate(&receiver)?;
 
     // permission check
     if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
@@ -375,7 +381,7 @@ pub fn execute_withdraw_unsold_token(deps: DepsMut, env: Env, info: MessageInfo,
         contract_addr: deps.api.addr_humanize(&state.reward_token)?.to_string(),
         msg: to_binary(&Cw20ExecuteMsg::TransferFrom {
             owner: deps.api.addr_humanize(&state.vesting)?.to_string(),
-            recipient: receiver.clone(),
+            recipient: receiver_addr.to_string(),
             amount: unsold_amount,
         })?,
         funds: vec![],
@@ -388,7 +394,7 @@ pub fn execute_withdraw_unsold_token(deps: DepsMut, env: Env, info: MessageInfo,
 /************************************ Query *************************************/
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::ParticipantsCount {} => to_binary(&query_count(deps)?),
         QueryMsg::GetParticipants { page, limit } => to_binary(&query_participants(deps, page, limit)?),

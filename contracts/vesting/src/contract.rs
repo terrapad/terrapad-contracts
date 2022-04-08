@@ -45,16 +45,16 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Respons
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> StdResult<Response> {
     match msg {
         ExecuteMsg::TransferOwnerShip { new_owner } => execute_transfer_ownership(deps, info, new_owner),
         ExecuteMsg::SetWorker { worker } => execute_set_worker(deps, info, worker),
-        ExecuteMsg::SetStartTime { new_start_time } => execute_set_start_time(deps, info, new_start_time),
-        ExecuteMsg::UpdateRecipient { recp, amount } => execute_update_recipient(deps, _env, info, recp, amount),
-        ExecuteMsg::Withdraw {} => execute_withdraw(deps, _env, info)
+        ExecuteMsg::SetStartTime { new_start_time } => execute_set_start_time(deps, env, info, new_start_time),
+        ExecuteMsg::UpdateRecipient { recp, amount } => execute_update_recipient(deps, env, info, recp, amount),
+        ExecuteMsg::Withdraw {} => execute_withdraw(deps, env, info)
     }
 }
 
@@ -103,12 +103,20 @@ pub fn execute_set_worker(deps: DepsMut, info: MessageInfo, worker: String) -> S
         .add_attribute("method", "set_worker"))
 }
 
-pub fn execute_set_start_time(deps: DepsMut, info: MessageInfo, new_start_time: u64) -> StdResult<Response> {
+pub fn execute_set_start_time(deps: DepsMut, env: Env, info: MessageInfo, new_start_time: u64) -> StdResult<Response> {
     let mut state: State = STATE.load(deps.storage)?;
 
     // permission check
     if deps.api.addr_canonicalize(info.sender.as_str())? != state.owner {
         return Err(StdError::generic_err("unauthorized"));
+    }
+
+    if state.start_time < env.block.time.seconds() {
+        return Err(StdError::generic_err("already started"));
+    }
+
+    if new_start_time < env.block.time.seconds() {
+        return Err(StdError::generic_err("can't set earlier time"));
     }
 
     state.start_time = new_start_time;
