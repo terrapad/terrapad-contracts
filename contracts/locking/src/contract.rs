@@ -197,11 +197,11 @@ fn compute_penalty_amount(amount: Uint128, current_time: u64, lock_info: &LockIn
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => Ok(to_binary(&query_config(deps)?)?),
         QueryMsg::LockInfo { address } => {
-            Ok(to_binary(&query_lock_account(deps, address)?)?)
+            Ok(to_binary(&query_lock_account(deps, env, address)?)?)
         }
         QueryMsg::LockedAccounts {
             start_after,
@@ -209,6 +209,7 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             order_by,
         } => Ok(to_binary(&query_lock_accounts(
             deps,
+            env,
             start_after,
             limit,
             order_by,
@@ -228,15 +229,17 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     Ok(resp)
 }
 
-pub fn query_lock_account(deps: Deps, address: String) -> StdResult<LockInfoResponse> {
+pub fn query_lock_account(deps: Deps, env: Env, address: String) -> StdResult<LockInfoResponse> {
     let info = read_lock_info(deps.storage, &deps.api.addr_canonicalize(&address)?).unwrap_or(LockInfo { amount: Uint128::zero(), last_locked_time: 0  });
-    let resp = LockInfoResponse { address, info };
+    let penalty_amount = compute_penalty_amount(info.amount, env.block.time.seconds(), &info);
+    let resp = LockInfoResponse { address, info, penalty: penalty_amount };
 
     Ok(resp)
 }
 
 pub fn query_lock_accounts(
     deps: Deps,
+    env: Env,
     start_after: Option<String>,
     limit: Option<u32>,
     order_by: Option<OrderBy>,
@@ -258,6 +261,7 @@ pub fn query_lock_accounts(
             Ok(LockInfoResponse {
                 address: deps.api.addr_humanize(&lock_account.0)?.to_string(),
                 info: lock_account.1.clone(),
+                penalty: compute_penalty_amount(lock_account.1.amount, env.block.time.seconds(), &lock_account.1)
             })
         })
         .collect();

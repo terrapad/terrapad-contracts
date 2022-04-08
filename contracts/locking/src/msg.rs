@@ -50,7 +50,7 @@ pub enum QueryMsg {
         start_after: Option<String>,
         limit: Option<u32>,
         order_by: Option<OrderBy>,
-    },
+    }
 }
 
 // We define a custom struct for each query response
@@ -67,6 +67,7 @@ pub struct ConfigResponse {
 pub struct LockInfoResponse {
     pub address: String,
     pub info: LockInfo,
+    pub penalty: Uint128
 }
 
 // We define a custom struct for each query response
