@@ -10,7 +10,7 @@ use crate::state::{
     read_config, read_lock_info, read_lock_infos, store_config, store_lock_info, Config, LockInfo
 };
 use crate::msg::{
-    ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, LockInfoResponse, LockedAccountsResponse, Cw20HookMsg,
+    ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, LockInfoResponse, LockedAccountsResponse, Cw20HookMsg, MigrateMsg,
 };
 use crate::types::OrderBy;
 use cw20::{Cw20ExecuteMsg, Cw20ReceiveMsg};
@@ -34,6 +34,12 @@ pub fn instantiate(
 
     Ok(Response::default())
 }
+
+#[cfg_attr(not(feature = "library"), entry_point)]
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+    Ok(Response::new())
+}
+
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
@@ -223,7 +229,7 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 }
 
 pub fn query_lock_account(deps: Deps, address: String) -> StdResult<LockInfoResponse> {
-    let info = read_lock_info(deps.storage, &deps.api.addr_canonicalize(&address)?)?;
+    let info = read_lock_info(deps.storage, &deps.api.addr_canonicalize(&address)?).unwrap_or(LockInfo { amount: Uint128::zero(), last_locked_time: 0  });
     let resp = LockInfoResponse { address, info };
 
     Ok(resp)
