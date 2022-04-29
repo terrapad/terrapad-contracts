@@ -14,7 +14,7 @@ use crate::state::{PARTICIPANTS, PRIVATE_SOLD_FUNDS, ACCURACY, State, Participan
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
@@ -44,7 +44,7 @@ pub fn instantiate(
 /************************************ Migration *************************************/
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn migrate(_deps: DepsMut, env: Env, _msg: MigrateMsg) -> StdResult<Response> {
+pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Response> {
     Ok(Response::new())
 }
 
@@ -394,7 +394,7 @@ pub fn execute_withdraw_unsold_token(deps: DepsMut, env: Env, info: MessageInfo,
 /************************************ Query *************************************/
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::ParticipantsCount {} => to_binary(&query_count(deps)?),
         QueryMsg::GetParticipants { page, limit } => to_binary(&query_participants(deps, page, limit)?),

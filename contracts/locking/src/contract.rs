@@ -45,7 +45,7 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Respons
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
         ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
-        ExecuteMsg::Withdraw { amount } => withdraw(deps, env, info, amount),
+        ExecuteMsg::Withdraw { } => withdraw(deps, env, info),
         _ => {
             assert_owner_privilege(deps.storage, deps.api, info.sender)?;
             match msg {
@@ -125,9 +125,10 @@ pub fn deposit(deps: DepsMut, env: Env, sender: Addr, amount: Uint128) -> StdRes
     let address = sender;
     let address_raw = deps.api.addr_canonicalize(&address.to_string())?;
 
-    let mut lock_info: LockInfo = read_lock_info(deps.storage, &address_raw).unwrap_or(LockInfo { amount: Uint128::zero(), last_locked_time: current_time });
+    let mut lock_info: LockInfo = read_lock_info(deps.storage, &address_raw).unwrap_or(LockInfo { amount: Uint128::zero(), last_locked_time: current_time, last_unlocked_time: 0 });
 
     lock_info.last_locked_time = current_time;
+    lock_info.last_unlocked_time = 0;
     lock_info.amount = amount;
     store_lock_info(deps.storage, &address_raw, &lock_info)?;
 
@@ -139,13 +140,14 @@ pub fn deposit(deps: DepsMut, env: Env, sender: Addr, amount: Uint128) -> StdRes
     ]))
 }
 
-pub fn withdraw(deps: DepsMut, env: Env, info: MessageInfo, amount: Uint128) -> StdResult<Response> {
+pub fn withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> StdResult<Response> {
     let current_time = env.block.time.seconds();
     let address = info.sender;
     let address_raw = deps.api.addr_canonicalize(&address.to_string())?;
 
     let config: Config = read_config(deps.storage)?;
     let mut lock_info: LockInfo = read_lock_info(deps.storage, &address_raw)?;
+    let amount = lock_info.amount;
 
     let penalty_amount = compute_penalty_amount(amount, current_time, &lock_info);
     let mut messages: Vec<CosmosMsg> = if penalty_amount.is_zero() {
@@ -172,6 +174,7 @@ pub fn withdraw(deps: DepsMut, env: Env, info: MessageInfo, amount: Uint128) -> 
     );
 
     lock_info.amount = lock_info.amount - amount;
+    lock_info.last_unlocked_time = env.block.time.seconds();
     store_lock_info(deps.storage, &address_raw, &lock_info)?;
 
     Ok(Response::new().add_messages(messages).add_attributes(vec![
@@ -230,7 +233,7 @@ pub fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
 }
 
 pub fn query_lock_account(deps: Deps, env: Env, address: String) -> StdResult<LockInfoResponse> {
-    let info = read_lock_info(deps.storage, &deps.api.addr_canonicalize(&address)?).unwrap_or(LockInfo { amount: Uint128::zero(), last_locked_time: 0  });
+    let info = read_lock_info(deps.storage, &deps.api.addr_canonicalize(&address)?).unwrap_or(LockInfo { amount: Uint128::zero(), last_locked_time: 0, last_unlocked_time: 0 });
     let penalty_amount = compute_penalty_amount(info.amount, env.block.time.seconds(), &info);
     let resp = LockInfoResponse { address, info, penalty: penalty_amount };
 

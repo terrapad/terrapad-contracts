@@ -31,6 +31,8 @@ pub struct LockInfo {
     pub amount: Uint128,
     // Last locked time.
     pub last_locked_time: u64,
+    // Last unlocked time.
+    pub last_unlocked_time: u64,
 }
 
 pub fn read_lock_info(storage: &dyn Storage, address: &CanonicalAddr) -> StdResult<LockInfo> {

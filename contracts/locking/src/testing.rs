@@ -147,7 +147,7 @@ fn deposit_and_withdraw() {
     let info = mock_info("addr0000", &[]);
     env.block.time = Timestamp::from_seconds(100);
 
-    let msg = ExecuteMsg::Withdraw { amount: Uint128::from(100u128) };
+    let msg = ExecuteMsg::Withdraw { };
     let res = execute(deps.as_mut(), env.clone(), info.clone(), msg.clone()).unwrap();
     assert_eq!(
         res.attributes,
