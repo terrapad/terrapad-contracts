@@ -45,7 +45,7 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> StdResult<Respons
 pub fn execute(deps: DepsMut, env: Env, info: MessageInfo, msg: ExecuteMsg) -> StdResult<Response> {
     match msg {
         ExecuteMsg::Receive(msg) => receive_cw20(deps, env, info, msg),
-        ExecuteMsg::Withdraw { } => withdraw(deps, env, info),
+        ExecuteMsg::Withdraw { amount } => withdraw(deps, env, info, amount),
         _ => {
             assert_owner_privilege(deps.storage, deps.api, info.sender)?;
             match msg {
@@ -140,14 +140,13 @@ pub fn deposit(deps: DepsMut, env: Env, sender: Addr, amount: Uint128) -> StdRes
     ]))
 }
 
-pub fn withdraw(deps: DepsMut, env: Env, info: MessageInfo) -> StdResult<Response> {
+pub fn withdraw(deps: DepsMut, env: Env, info: MessageInfo, amount: Uint128) -> StdResult<Response> {
     let current_time = env.block.time.seconds();
     let address = info.sender;
     let address_raw = deps.api.addr_canonicalize(&address.to_string())?;
 
     let config: Config = read_config(deps.storage)?;
     let mut lock_info: LockInfo = read_lock_info(deps.storage, &address_raw)?;
-    let amount = lock_info.amount;
 
     let penalty_amount = compute_penalty_amount(amount, current_time, &lock_info);
     let mut messages: Vec<CosmosMsg> = if penalty_amount.is_zero() {

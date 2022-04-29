@@ -28,7 +28,9 @@ pub enum ExecuteMsg {
         dead: Option<String>
     },
     Receive(Cw20ReceiveMsg),
-    Withdraw {},
+    Withdraw {
+        amount: Uint128
+    },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
