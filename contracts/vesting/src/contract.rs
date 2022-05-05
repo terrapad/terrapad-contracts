@@ -111,7 +111,7 @@ pub fn execute_set_start_time(deps: DepsMut, env: Env, info: MessageInfo, new_st
         return Err(StdError::generic_err("unauthorized"));
     }
 
-    if state.start_time < env.block.time.seconds() {
+    if state.start_time != 0 && state.start_time < env.block.time.seconds() {
         return Err(StdError::generic_err("already started"));
     }
 
