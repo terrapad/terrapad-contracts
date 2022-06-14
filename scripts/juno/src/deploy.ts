@@ -17,12 +17,12 @@ async function main() {
   const client = await SigningCosmWasmClient.connectWithSigner(
     process.env.MAIN_NETWORK || "localhost:26657",
     wallet,
-    { gasPrice: GasPrice.fromString("0.1ujunox") }
+    { gasPrice: GasPrice.fromString(process.env.GAS_PRICE || "0.001ujuno") }
   );
 
   const cw20 = await instantiateContract(client, wallet, wallet, cw20CodeId, {
-    name: "Test Token",
-    symbol: "TEST",
+    name: "Test TOKEN",
+    symbol: "TOKEN",
     decimals: 6,
     initial_balances: [
       {
@@ -30,6 +30,10 @@ async function main() {
         amount: "100000000000",
       },
     ],
+    mint: {
+      minter: deployer.address,
+      cap: null,
+    },
   });
   console.log("cw20", cw20.contractAddress);
 }

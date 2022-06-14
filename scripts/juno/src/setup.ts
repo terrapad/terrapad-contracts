@@ -54,18 +54,18 @@ async function deployContracts(
   /******************************************************/
   // Params need to care
   const rewardToken =
-    "juno16d9zhs0ja2qawv8vyc03xelsvmf76lqle2yt2zvam6ds9rcll7gsac77tl";
+    "juno1dvzgy9tz200pstzem0tf0w24nsfmjxhzmyf9xqqafjpx4thrjapq6v572r";
   const merkleRoot =
     "b1e5f5709783df6791e6327458961c81ac685cc89e87803e4197d91a964254ee";
   const totalRewardsAmount = 125000000000;
   const privateStart = Math.floor(
-    new Date("2022-06-09T03:30:00.000Z").getTime() / 1000
+    new Date("2022-06-13T03:30:00.000Z").getTime() / 1000
   );
   const publicStart = Math.floor(
-    new Date("2022-06-10T03:00:00.000Z").getTime() / 1000
+    new Date("2022-06-16T03:00:00.000Z").getTime() / 1000
   );
   const vestingStart = Math.floor(
-    new Date("2022-06-13T04:00:00.000Z").getTime() / 1000
+    new Date("2022-06-16T04:00:00.000Z").getTime() / 1000
   );
   /******************************************************/
 
@@ -134,7 +134,7 @@ async function deployLocking(
 
   const lockingParams = {
     owner: deployer.address,
-    token: "juno12wqe5sx8kc3u3rflu2dw5d6rhfsxuufkrgqaxtsx2srgjfmfd6ps84wh63",
+    token: "juno1uza23z5l4vzwxemswpxzq4zzln0qrk06n74dnv2zqg6fufz43ajq0klsc8",
     penalty_period: 86400 * 30,
     dead: deployer.address,
   };
@@ -158,10 +158,10 @@ async function main() {
   const client = await SigningCosmWasmClient.connectWithSigner(
     process.env.MAIN_NETWORK || "localhost:26657",
     wallet,
-    { gasPrice: GasPrice.fromString("0.1ujunox") }
+    { gasPrice: GasPrice.fromString(process.env.GAS_PRICE || "0.001ujuno") }
   );
 
-  await deployLocking(client, wallet);
+  await deployContracts(client, wallet);
 }
 
 main().catch(console.error);

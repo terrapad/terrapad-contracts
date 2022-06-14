@@ -60,7 +60,7 @@ async function main() {
   const client = await SigningCosmWasmClient.connectWithSigner(
     process.env.MAIN_NETWORK || "localhost:26657",
     wallet,
-    { gasPrice: GasPrice.fromString("0.025uosmo") }
+    { gasPrice: GasPrice.fromString(process.env.GAS_PRICE || "0.001ujuno") }
   );
 }
 

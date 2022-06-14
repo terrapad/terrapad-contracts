@@ -26,7 +26,7 @@ async function main() {
   const client = await SigningCosmWasmClient.connectWithSigner(
     process.env.MAIN_NETWORK || "",
     wallet,
-    { gasPrice: GasPrice.fromString("0.1ujunox") }
+    { gasPrice: GasPrice.fromString(process.env.GAS_PRICE || "0.001ujuno") }
   );
 
   await storeContract(client, wallet, "../../artifacts/presale.wasm");
